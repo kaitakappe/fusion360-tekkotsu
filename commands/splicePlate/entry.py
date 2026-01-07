@@ -181,17 +181,20 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     for plate_type in SPLICE_PLATE_TYPES.keys():
         plate_type_input.listItems.add(plate_type, False)
     plate_type_input.listItems.item(0).isSelected = True
-    
+
+    # 初期値は最初のプレート寸法に合わせる
+    default_plate = list(SPLICE_PLATE_TYPES.values())[0]
+
     # 板厚
-    thickness_input = inputs.addValueInput('thickness', '板厚', 'mm', 
-                                          adsk.core.ValueInput.createByReal(0.9))
+    inputs.addValueInput('thickness', '板厚', 'mm', 
+                         adsk.core.ValueInput.createByReal(default_plate['thickness'] / 10.0))
     
     # ボルト穴径
-    hole_diameter_input = inputs.addValueInput('hole_diameter', 'ボルト穴径', 'mm',
-                                              adsk.core.ValueInput.createByReal(2.2))
+    inputs.addValueInput('hole_diameter', 'ボルト穴径', 'mm',
+                         adsk.core.ValueInput.createByReal(default_plate['hole_dia'] / 10.0))
 
     # プレビュー画像（初期化）
-    preview_path = _build_preview_png(list(SPLICE_PLATE_TYPES.values())[0])
+    preview_path = _build_preview_png(default_plate)
     preview_input = inputs.addImageCommandInput('plate_preview', 'プレビュー', preview_path.replace('\\','/'))
     preview_input.isFullWidth = True
     
@@ -222,14 +225,7 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
             hole_diameter_input = inputs.itemById('hole_diameter')
             hole_diameter_input.value = plate_data['hole_dia'] / 10.0  # mm→cm
             
-            preview_path = _build_preview_png(plate_data)
-            preview_input = inputs.itemById('plate_preview')
-            if preview_input:
-                preview_input.imageFile = preview_path.replace('\\','/')
-            preview_path = _build_preview_png(plate_data)
-            preview_input = inputs.itemById('plate_preview')
-            if preview_input:
-                preview_input.imageFile = preview_path.replace('\\','/')
+            _update_preview(inputs, plate_data)
 
 def command_destroy(args: adsk.core.CommandEventArgs):
     global local_handlers
@@ -435,3 +431,18 @@ def _build_preview_png(plate_data: dict) -> str:
     with open(out_path, 'wb') as f:
         f.write(png)
     return str(out_path)
+
+
+def _update_preview(inputs: adsk.core.CommandInputs, plate_data: dict) -> None:
+    """プレビュー画像を再生成してImageCommandInputに反映"""
+    preview_input = inputs.itemById('plate_preview')
+    if not preview_input:
+        return
+
+    try:
+        preview_path = _build_preview_png(plate_data)
+    except Exception as exc:  # 生成失敗時は既存画像を使う
+        futil.log(f'プレビュー生成に失敗: {exc}', force_console=True)
+        preview_path = str(Path(__file__).parent / 'resources' / 'preview.png')
+
+    preview_input.imageFile = preview_path.replace('\\','/')
