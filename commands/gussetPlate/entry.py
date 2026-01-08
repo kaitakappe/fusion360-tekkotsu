@@ -104,14 +104,6 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     inputs.itemById('target_sel').addSelectionFilter('Edges')
     inputs.itemById('target_sel').setSelectionLimits(0, 1)
 
-    inputs.addValueInput('offset_x', 'X方向オフセット', 'cm', adsk.core.ValueInput.createByReal(0))
-    inputs.addValueInput('offset_y', 'Y方向オフセット', 'cm', adsk.core.ValueInput.createByReal(0))
-    inputs.addValueInput('offset_z', 'Z方向オフセット', 'cm', adsk.core.ValueInput.createByReal(0))
-
-    preview_path = _get_placeholder_preview()
-    preview_input = inputs.addImageCommandInput('model_preview', 'プレビュー', preview_path.replace('\\','/'))
-    preview_input.isFullWidth = True
-
     # 初期表示: 配置モードを表示
     set_visibility(inputs, '登録済みモデル配置')
 
@@ -134,7 +126,7 @@ def refresh_model_list(model_input: adsk.core.DropDownCommandInput):
 
 def set_visibility(inputs: adsk.core.CommandInputs, mode: str):
     register_inputs = ['register_name', 'register_desc', 'register_path', 'browse_file']
-    place_inputs = ['model', 'offset_x', 'offset_y', 'offset_z', 'target_sel']
+    place_inputs = ['model', 'target_sel']
     for i in register_inputs:
         inp = inputs.itemById(i)
         if inp:
@@ -180,10 +172,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
                 placement_point = target_sel.selection(0).point
             except Exception:
                 placement_point = adsk.core.Point3D.create(0, 0, 0)
-        offset_x = inputs.itemById('offset_x').value
-        offset_y = inputs.itemById('offset_y').value
-        offset_z = inputs.itemById('offset_z').value
-        place_gusset_model(model_name, placement_point, offset_x, offset_y, offset_z)
+        place_gusset_model(model_name, placement_point)
 
 def command_input_changed(args: adsk.core.InputChangedEventArgs):
     changed = args.input
@@ -260,7 +249,7 @@ def _open_file_dialog() -> str:
         futil.log(f'ファイルダイアログエラー: {e}')
     return ''
 
-def place_gusset_model(model_name: str, placement_point: adsk.core.Point3D, offset_x: float = 0, offset_y: float = 0, offset_z: float = 0):
+def place_gusset_model(model_name: str, placement_point: adsk.core.Point3D):
     try:
         design = adsk.fusion.Design.cast(app.activeProduct)
         if not design:
@@ -285,11 +274,10 @@ def place_gusset_model(model_name: str, placement_point: adsk.core.Point3D, offs
             ui.messageBox(f'モデルファイルが見つかりません:\n{model_path_obj}')
             return
 
-        # 配置位置（選択点＋オフセット）
+        # 配置位置（選択点をそのまま使用）
         base_pt = placement_point or adsk.core.Point3D.create(0, 0, 0)
-        target_pt = adsk.core.Point3D.create(base_pt.x + offset_x, base_pt.y + offset_y, base_pt.z + offset_z)
         matrix = adsk.core.Matrix3D.create()
-        matrix.translation = adsk.core.Vector3D.create(target_pt.x, target_pt.y, target_pt.z)
+        matrix.translation = adsk.core.Vector3D.create(base_pt.x, base_pt.y, base_pt.z)
 
         occs = design.rootComponent.occurrences
         before_count = occs.count
@@ -311,6 +299,12 @@ def place_gusset_model(model_name: str, placement_point: adsk.core.Point3D, offs
             if after_count > before_count:
                 occ = occs.item(after_count - 1)
                 occ.transform = matrix
+                try:
+                    occ.name = model_name
+                    if occ.component:
+                        occ.component.name = model_name
+                except Exception as rename_err:
+                    futil.log(f'モデル名設定エラー: {rename_err}')
             ui.messageBox(f'ガセットプレート"{model_name}"を配置しました')
         except Exception as e1:
             ui.messageBox(f'モデルの配置に失敗しました:\n{e1}')
@@ -318,23 +312,3 @@ def place_gusset_model(model_name: str, placement_point: adsk.core.Point3D, offs
     except Exception as e:
         ui.messageBox(f'エラーが発生しました: {e}')
         futil.log(f'エラー: {e}')
-
-def _get_placeholder_preview() -> str:
-    W, H = 320, 240
-    bg = (220, 220, 220)
-    buf = bytearray([bg[0], bg[1], bg[2]] * W * H)
-    import struct, zlib
-    def chunk(tag, data):
-        return (struct.pack('>I', len(data)) + tag + data + struct.pack('>I', zlib.crc32(tag + data) & 0xFFFFFFFF))
-    raw = bytearray()
-    for y in range(H):
-        raw.append(0)
-        raw.extend(buf[y*W*3:(y+1)*W*3])
-    ihdr = struct.pack('>IIBBBBB', W, H, 8, 2, 0, 0, 0)
-    comp = zlib.compress(bytes(raw))
-    png = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', ihdr) + chunk(b'IDAT', comp) + chunk(b'IEND', b'')
-    out_path = Path(__file__).parent / 'resources' / 'preview.png'
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(out_path, 'wb') as f:
-        f.write(png)
-    return str(out_path)

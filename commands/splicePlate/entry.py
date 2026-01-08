@@ -1,6 +1,8 @@
 import adsk.core
 import adsk.fusion
 import os
+import json
+import shutil
 from ...lib import fusionAddInUtils as futil
 from ... import config
 from pathlib import Path
@@ -20,6 +22,19 @@ PANEL_ID = 'SolidCreatePanel'
 COMMAND_BESIDE_ID = ''
 
 local_handlers = []
+
+def load_splice_models():
+    models = {}
+    cfg = Path(__file__).parent / 'splice_models.json'
+    if cfg.exists():
+        try:
+            with open(cfg, 'r', encoding='utf-8') as f:
+                models = json.load(f)
+        except Exception as e:
+            futil.log(f'スプライスモデル設定の読み込みエラー: {e}')
+    return models
+
+SPLICE_PLATE_MODELS = load_splice_models()
 
 # スプライスプレートの種類と寸法データ（H鋼フランジ部用）
 SPLICE_PLATE_TYPES = {
@@ -170,77 +185,289 @@ def stop():
     if command_definition:
         command_definition.deleteMe()
 
+def refresh_model_list(model_input: adsk.core.DropDownCommandInput):
+    model_input.listItems.clear()
+    global SPLICE_PLATE_MODELS
+    SPLICE_PLATE_MODELS = load_splice_models()
+    if SPLICE_PLATE_MODELS:
+        for name in SPLICE_PLATE_MODELS.keys():
+            model_input.listItems.add(name, False)
+        model_input.listItems.item(0).isSelected = True
+        model_input.isEnabled = True
+    else:
+        model_input.listItems.add('モデルが登録されていません', True)
+        model_input.isEnabled = False
+
+def set_visibility(inputs: adsk.core.CommandInputs, mode: str):
+    register_inputs = ['register_name', 'register_desc', 'register_path', 'browse_file']
+    place_inputs = ['model', 'target_sel']
+    standard_inputs = ['plate_type', 'thickness', 'hole_diameter', 'plate_preview', 'target_sel']
+    for i in register_inputs:
+        inp = inputs.itemById(i)
+        if inp:
+            inp.isVisible = (mode == 'ファイルから登録')
+    for i in place_inputs:
+        inp = inputs.itemById(i)
+        if inp:
+            inp.isVisible = (mode == '登録済みモデル配置')
+    for i in standard_inputs:
+        inp = inputs.itemById(i)
+        if inp:
+            inp.isVisible = (mode == '標準プレート作成')
+
 def command_created(args: adsk.core.CommandCreatedEventArgs):
     futil.log(f'{CMD_NAME} コマンドが作成されました')
     
     inputs = args.command.commandInputs
-    
-    # プレートタイプの選択
+
+    mode_input = inputs.addDropDownCommandInput('mode', 'モード', adsk.core.DropDownStyles.TextListDropDownStyle)
+    mode_input.listItems.add('標準プレート作成', True)
+    mode_input.listItems.add('登録済みモデル配置', False)
+    mode_input.listItems.add('ファイルから登録', False)
+
+    inputs.addStringValueInput('register_name', '登録名', '')
+    inputs.addStringValueInput('register_desc', '説明', '')
+    inputs.addStringValueInput('register_path', 'ファイルパス', '')
+    inputs.addBoolValueInput('browse_file', 'ファイルを選択...', False, '', False)
+
     plate_type_input = inputs.addDropDownCommandInput('plate_type', 'プレートタイプ', 
                                                       adsk.core.DropDownStyles.TextListDropDownStyle)
     for plate_type in SPLICE_PLATE_TYPES.keys():
         plate_type_input.listItems.add(plate_type, False)
     plate_type_input.listItems.item(0).isSelected = True
 
-    # 初期値は最初のプレート寸法に合わせる
     default_plate = list(SPLICE_PLATE_TYPES.values())[0]
 
-    # 板厚
     inputs.addValueInput('thickness', '板厚', 'mm', 
                          adsk.core.ValueInput.createByReal(default_plate['thickness'] / 10.0))
-    
-    # ボルト穴径
     inputs.addValueInput('hole_diameter', 'ボルト穴径', 'mm',
                          adsk.core.ValueInput.createByReal(default_plate['hole_dia'] / 10.0))
 
-    # プレビュー画像（初期化）
+    model_input = inputs.addDropDownCommandInput('model', 'スプライスプレートモデル', adsk.core.DropDownStyles.TextListDropDownStyle)
+    refresh_model_list(model_input)
+
+    target_sel = inputs.addSelectionInput('target_sel', '配置先', '面/点/エッジを選択')
+    target_sel.addSelectionFilter('PlanarFaces')
+    target_sel.addSelectionFilter('Vertices')
+    target_sel.addSelectionFilter('Edges')
+    target_sel.setSelectionLimits(0, 1)
+
     preview_path = _build_preview_png(default_plate)
     preview_input = inputs.addImageCommandInput('plate_preview', 'プレビュー', preview_path.replace('\\','/'))
     preview_input.isFullWidth = True
-    
+
+    set_visibility(inputs, '標準プレート作成')
+
     futil.add_handler(args.command.execute, command_execute, local_handlers=local_handlers)
     futil.add_handler(args.command.inputChanged, command_input_changed, local_handlers=local_handlers)
     futil.add_handler(args.command.destroy, command_destroy, local_handlers=local_handlers)
 
 def command_execute(args: adsk.core.CommandEventArgs):
     inputs = args.command.commandInputs
-    
-    plate_type = inputs.itemById('plate_type').selectedItem.name
-    thickness = inputs.itemById('thickness').value
-    hole_diameter = inputs.itemById('hole_diameter').value
-    
-    create_splice_plate(plate_type, thickness, hole_diameter)
+    mode = inputs.itemById('mode').selectedItem.name
+
+    if mode == 'ファイルから登録':
+        reg_name_input = inputs.itemById('register_name')
+        reg_name = reg_name_input.value.strip()
+        reg_desc = inputs.itemById('register_desc').value.strip()
+        reg_path = inputs.itemById('register_path').value.strip()
+        if reg_path and not reg_name:
+            reg_name = Path(reg_path).stem
+            reg_name_input.value = reg_name
+        if not reg_name:
+            ui.messageBox('登録名を入力してください')
+            return
+        if not reg_path:
+            reg_path = _open_file_dialog()
+            if not reg_path:
+                return
+            inputs.itemById('register_path').value = reg_path
+        if not Path(reg_path).exists():
+            ui.messageBox(f'指定のファイルが見つかりません:\n{reg_path}')
+            return
+        register_model_to_json(reg_name, reg_path, reg_desc or 'ユーザー登録モデル')
+        ui.messageBox(f'モデル"{reg_name}"を登録しました')
+        refresh_model_list(inputs.itemById('model'))
+    elif mode == '登録済みモデル配置':
+        model_name = inputs.itemById('model').selectedItem.name
+        target_sel = inputs.itemById('target_sel')
+        placement_point = adsk.core.Point3D.create(0, 0, 0)
+        if target_sel and target_sel.selectionCount > 0:
+            try:
+                placement_point = target_sel.selection(0).point
+            except Exception:
+                placement_point = adsk.core.Point3D.create(0, 0, 0)
+        place_splice_model(model_name, placement_point)
+    else:
+        plate_type = inputs.itemById('plate_type').selectedItem.name
+        thickness = inputs.itemById('thickness').value
+        hole_diameter = inputs.itemById('hole_diameter').value
+        target_sel = inputs.itemById('target_sel')
+        placement_point = adsk.core.Point3D.create(0, 0, 0)
+        if target_sel and target_sel.selectionCount > 0:
+            try:
+                placement_point = target_sel.selection(0).point
+            except Exception:
+                placement_point = adsk.core.Point3D.create(0, 0, 0)
+
+        create_splice_plate(plate_type, thickness, hole_diameter, placement_point)
 
 def command_input_changed(args: adsk.core.InputChangedEventArgs):
     changed_input = args.input
     inputs = args.inputs
-    
+    if changed_input.id == 'mode':
+        set_visibility(inputs, changed_input.selectedItem.name)
+    if changed_input.id == 'browse_file' and changed_input.value:
+        path = _open_file_dialog()
+        if path:
+            inputs.itemById('register_path').value = path
+            name_input = inputs.itemById('register_name')
+            if name_input and not name_input.value.strip():
+                name_input.value = Path(path).stem
+        changed_input.value = False
     if changed_input.id == 'plate_type':
         plate_type = changed_input.selectedItem.name
         plate_data = SPLICE_PLATE_TYPES.get(plate_type)
         if plate_data:
             thickness_input = inputs.itemById('thickness')
-            thickness_input.value = plate_data['thickness'] / 10.0  # mm→cm
-            
+            thickness_input.value = plate_data['thickness'] / 10.0
             hole_diameter_input = inputs.itemById('hole_diameter')
-            hole_diameter_input.value = plate_data['hole_dia'] / 10.0  # mm→cm
-            
+            hole_diameter_input.value = plate_data['hole_dia'] / 10.0
             _update_preview(inputs, plate_data)
 
 def command_destroy(args: adsk.core.CommandEventArgs):
     global local_handlers
     local_handlers = []
 
-def create_splice_plate(plate_type: str, thickness: float, hole_diameter: float):
+def register_model_to_json(model_name: str, model_path: str, description: str = ''):
+    try:
+        base_dir = Path(__file__).parent
+        cfg = base_dir / 'splice_models.json'
+        models_dir = base_dir / 'models'
+        models_dir.mkdir(exist_ok=True)
+
+        src_path = Path(model_path)
+        if not src_path.exists():
+            ui.messageBox(f'ソースファイルが見つかりません:\n{model_path}')
+            return
+
+        local_file_name = src_path.name
+        local_file_path = models_dir / local_file_name
+
+        shutil.copy2(str(src_path), str(local_file_path))
+        futil.log(f'モデルファイルをコピー: {src_path} -> {local_file_path}')
+
+        relative_path = str(local_file_path.relative_to(base_dir)).replace('\\', '/')
+
+        models = {}
+        if cfg.exists():
+            with open(cfg, 'r', encoding='utf-8') as f:
+                models = json.load(f)
+
+        models[model_name] = {'path': relative_path, 'description': description or 'ユーザー登録モデル'}
+
+        with open(cfg, 'w', encoding='utf-8') as f:
+            json.dump(models, f, ensure_ascii=False, indent=2)
+
+        global SPLICE_PLATE_MODELS
+        SPLICE_PLATE_MODELS = models
+        futil.log(f'モデル登録完了: {model_name}')
+    except Exception as e:
+        ui.messageBox(f'モデル登録に失敗しました: {e}')
+        futil.log(f'登録エラー: {e}')
+
+def _open_file_dialog() -> str:
+    try:
+        dlg = ui.createFileDialog()
+        dlg.isMultiSelectEnabled = False
+        dlg.title = 'モデルファイルを選択 (f3d/step/iges)'
+        dlg.filter = 'Fusion 360 Archive (*.f3d);;STEP Files (*.step; *.stp);;IGES Files (*.iges; *.igs);;All Files (*.*)'
+        dlg.filterIndex = 0
+        dlg.initialDirectory = str((Path(__file__).parent / 'models').resolve())
+        res = dlg.showOpen()
+        if res == adsk.core.DialogResults.DialogOK:
+            return dlg.filename
+    except Exception as e:
+        futil.log(f'ファイルダイアログエラー: {e}')
+    return ''
+
+def place_splice_model(model_name: str, placement_point: adsk.core.Point3D):
+    try:
+        design = adsk.fusion.Design.cast(app.activeProduct)
+        if not design:
+            ui.messageBox('アクティブなデザインがありません')
+            return
+        model_info = SPLICE_PLATE_MODELS.get(model_name)
+        if not model_info:
+            ui.messageBox(f'モデル {model_name} が見つかりません')
+            return
+        model_path = model_info.get('path')
+        if not model_path:
+            ui.messageBox(f'モデル {model_name} のパスが設定されていません')
+            return
+
+        model_path_obj = Path(model_path)
+        if not model_path_obj.is_absolute():
+            base_dir = Path(__file__).parent
+            model_path_obj = base_dir / model_path_obj
+
+        if not model_path_obj.exists():
+            ui.messageBox(f'モデルファイルが見つかりません:\n{model_path_obj}')
+            return
+
+        base_pt = placement_point or adsk.core.Point3D.create(0, 0, 0)
+        matrix = adsk.core.Matrix3D.create()
+        matrix.translation = adsk.core.Vector3D.create(base_pt.x, base_pt.y, base_pt.z)
+
+        occs = design.rootComponent.occurrences
+        before_count = occs.count
+        try:
+            import_manager = app.importManager
+            opts = None
+            ext = model_path_obj.suffix.lower()
+            if ext == '.f3d':
+                opts = import_manager.createFusionArchiveImportOptions(str(model_path_obj))
+            elif ext in ('.step', '.stp'):
+                opts = import_manager.createSTEPImportOptions(str(model_path_obj))
+            elif ext in ('.iges', '.igs'):
+                opts = import_manager.createIGESImportOptions(str(model_path_obj))
+            else:
+                opts = import_manager.createImportOptions(str(model_path_obj))
+
+            import_manager.importToTarget(opts, design.rootComponent)
+            after_count = occs.count
+            if after_count > before_count:
+                occ = occs.item(after_count - 1)
+                occ.transform = matrix
+                try:
+                    occ.name = model_name
+                    if occ.component:
+                        occ.component.name = model_name
+                except Exception as rename_err:
+                    futil.log(f'モデル名設定エラー: {rename_err}')
+            ui.messageBox(f'スプライスプレート"{model_name}"を配置しました')
+        except Exception as e1:
+            ui.messageBox(f'モデルの配置に失敗しました:\n{e1}')
+            futil.log(f'モデル配置エラー: {e1}')
+    except Exception as e:
+        ui.messageBox(f'エラーが発生しました: {e}')
+        futil.log(f'エラー: {e}')
+
+def create_splice_plate(plate_type: str, thickness: float, hole_diameter: float, placement_point: adsk.core.Point3D):
     """スプライスプレートを作成"""
     try:
         design = adsk.fusion.Design.cast(app.activeProduct)
         root_comp = design.rootComponent
         
-        # 新しいコンポーネントを作成
-        occurrence = root_comp.occurrences.addNewComponent(adsk.core.Matrix3D.create())
+        base_pt = placement_point or adsk.core.Point3D.create(0, 0, 0)
+        matrix = adsk.core.Matrix3D.create()
+        matrix.translation = adsk.core.Vector3D.create(base_pt.x, base_pt.y, base_pt.z)
+
+        occurrence = root_comp.occurrences.addNewComponent(matrix)
         component = occurrence.component
-        component.name = f'スプライスプレート_{plate_type}'
+        clean_plate = plate_type.replace('用', ' ').replace('_', ' ')
+        comp_name = f'SPL {clean_plate}'
+        component.name = comp_name
         
         plate_data = SPLICE_PLATE_TYPES.get(plate_type)
         if not plate_data:
