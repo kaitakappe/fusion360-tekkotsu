@@ -8,8 +8,7 @@ from ..lib import fusionAddInUtils as futil
 from .commandDialog import entry as commandDialog
 from .paletteShow import entry as paletteShow
 from .paletteSend import entry as paletteSend
-from .splicePlate import entry as splicePlate
-from .gussetPlate import entry as gussetPlate
+from .steelPlateModule import entry as steelPlateModule
 
 # TODO add your imported modules to this list.
 # Fusion will automatically call the start() and stop() functions.
@@ -17,8 +16,7 @@ commands = [
     commandDialog,
     paletteShow,
     paletteSend,
-    splicePlate,
-    gussetPlate
+    steelPlateModule
 ]
 
 
