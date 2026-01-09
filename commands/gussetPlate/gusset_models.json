@@ -131,5 +131,29 @@
   "GPL H350 to 300G32_": {
     "path": "models/GPL H350 to 300G32_.f3d",
     "description": "ユーザー登録モデル"
+  },
+  "GPL H400 to H200G33": {
+    "path": "models/GPL H400 to H200G33.f3d",
+    "description": "ユーザー登録モデル"
+  },
+  "GPL H400 to H250G34": {
+    "path": "models/GPL H400 to H250G34.f3d",
+    "description": "ユーザー登録モデル"
+  },
+  "GPL H400 to H300G35": {
+    "path": "models/GPL H400 to H300G35.f3d",
+    "description": "ユーザー登録モデル"
+  },
+  "GPL H400 to H350G36": {
+    "path": "models/GPL H400 to H350G36.f3d",
+    "description": "ユーザー登録モデル"
+  },
+  "GPL H400 to H200G37": {
+    "path": "models/GPL H400 to H200G37.f3d",
+    "description": "ユーザー登録モデル"
+  },
+  "GPL H400 to H250G38": {
+    "path": "models/GPL H400 to H250G38.f3d",
+    "description": "ユーザー登録モデル"
   }
 }
