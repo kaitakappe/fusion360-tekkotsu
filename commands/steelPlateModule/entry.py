@@ -1031,7 +1031,11 @@ def place_gusset_model(model_name: str, placement_point: adsk.core.Point3D):
             return
 
         # ガセットプレートは既存ボディを使用するため、modify_extrude_height=False
-        _place_model_impl(design, model_name, model_path_obj, placement_point, modify_extrude_height=False)
+        # 特定モデル（GPL H200 to C150x75）は後処理をスキップ（オプションB）
+        do_cleanup = True
+        if model_name == 'GPL H200 to C150x75':
+            do_cleanup = False
+        _place_model_impl(design, model_name, model_path_obj, placement_point, transform=None, modify_extrude_height=False, do_name_cleanup=do_cleanup)
         ui.messageBox(f'ガセットプレート"{model_name}"を配置しました')
         
     except Exception as e:
@@ -1285,7 +1289,7 @@ def _apply_height_scale_to_occurrence(occ: adsk.fusion.Occurrence, target_h_cm: 
     except Exception as e:
         futil.log(f'高さスケール適用エラー: {e}')
 
-def _place_model_impl(design: adsk.fusion.Design, model_name: str, model_path_obj: Path, placement_point: adsk.core.Point3D, transform: adsk.core.Matrix3D = None, modify_extrude_height: bool = True):
+def _place_model_impl(design: adsk.fusion.Design, model_name: str, model_path_obj: Path, placement_point: adsk.core.Point3D, transform: adsk.core.Matrix3D = None, modify_extrude_height: bool = True, do_name_cleanup: bool = True):
     """モデル配置の実装。インポートし、必要なら変換を適用し、Occurrenceを返す。
     
     Args:
@@ -1342,20 +1346,17 @@ def _place_model_impl(design: adsk.fusion.Design, model_name: str, model_path_ob
         occ = occs.item(before_count)  # 最初に追加されたコンポーネントを取得
         futil.log(f'使用するコンポーネント: {occ.component.name if occ.component else "N/A"}', force_console=True)
         
-        # コンポーネント内のボディ数を確認
-        if occ.component:
+        # コンポーネント内の情報ログや名前クリーンアップは必要な場合のみ実施
+        if occ.component and do_name_cleanup:
             body_count = occ.component.bRepBodies.count
             futil.log(f'コンポーネント内のボディ数: {body_count}', force_console=True)
             for i in range(body_count):
                 body = occ.component.bRepBodies.item(i)
                 futil.log(f'  ボディ[{i}]: {body.name if hasattr(body, "name") else "N/A"}', force_console=True)
             
-            # ネストされたコンポーネントがある場合を検出
             comp_count = occ.component.occurrences.count
             futil.log(f'コンポーネント内の子コンポーネント数: {comp_count}', force_console=True)
-            
             if comp_count > 0 and body_count == 0:
-                # 外側が空で内側にコンポーネントがある場合、その情報をログに出力
                 futil.log(f'警告: ネストされたコンポーネント構造が検出されました', force_console=True)
                 for i in range(comp_count):
                     child_occ = occ.component.occurrences.item(i)
@@ -1368,19 +1369,16 @@ def _place_model_impl(design: adsk.fusion.Design, model_name: str, model_path_ob
         
         occ.transform = transform if transform else default_matrix
         try:
-            if occ.component:
-                # 現在のコンポーネント名、または指定モデル名から末尾の(番号)を除去し、末尾に半角スペース1個を付与
+            if occ.component and do_name_cleanup:
                 import re
                 current_name = occ.component.name if hasattr(occ.component, 'name') else model_name
                 base_name = current_name or model_name
                 clean_name = re.sub(r'\s*\(\d+\)\s*$', '', base_name).rstrip() + ' '
                 occ.component.name = clean_name
-                # 可能ならオカレンス名も揃える（失敗しても無視）
                 try:
                     occ.name = clean_name
                 except Exception:
                     pass
-                # 子コンポーネントがある場合もクリーンアップ（ガセットで内包されるケースに対応）
                 try:
                     child_occs = occ.component.occurrences
                     for i in range(child_occs.count):

@@ -112,6 +112,10 @@
       "H-300×300×10×15": {
         "path": "models/sections/H形鋼/H-300×300×10×15.f3d",
         "description": "ユーザー登録モデル"
+      },
+      "C-250×90×9×13": {
+        "path": "models/sections/H形鋼/C-250×90×9×13.f3d",
+        "description": "ユーザー登録モデル"
       }
     }
   },
@@ -124,11 +128,108 @@
       "C-100×50×5×7.5": {
         "path": "models/sections/溝形鋼/C-100×50×5×7.5.f3d",
         "description": "ユーザー登録モデル"
+      },
+      "C-125×65×6×8": {
+        "path": "models/sections/溝形鋼/C-125×65×6×8.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "C-150×75×6.5×10": {
+        "path": "models/sections/溝形鋼/C-150×75×6.5×10.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "C-150×75×9×12.5": {
+        "path": "models/sections/溝形鋼/C-150×75×9×12.5.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "C-180×75×7×10.5": {
+        "path": "models/sections/溝形鋼/C-180×75×7×10.5.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "C-200×70×7.0×10": {
+        "path": "models/sections/溝形鋼/C-200×70×7.0×10.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "C-200×80×7.5×11": {
+        "path": "models/sections/溝形鋼/C-200×80×7.5×11.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "C-200×90×8×13.5": {
+        "path": "models/sections/溝形鋼/C-200×90×8×13.5.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "C-250×90×11×14.5": {
+        "path": "models/sections/溝形鋼/C-250×90×11×14.5.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "C-300×90×9×13": {
+        "path": "models/sections/溝形鋼/C-300×90×9×13.f3d",
+        "description": "ユーザー登録モデル"
       }
     }
   },
   "Lアングル": {
-    "models": {}
+    "models": {
+      "L-20×20×3": {
+        "path": "models/sections/Lアングル/L-20×20×3.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "L-25×25×3": {
+        "path": "models/sections/Lアングル/L-25×25×3.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "L-30×30×3": {
+        "path": "models/sections/Lアングル/L-30×30×3.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "L-30×30×5": {
+        "path": "models/sections/Lアングル/L-30×30×5.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "L-40×40×3": {
+        "path": "models/sections/Lアングル/L-40×40×3.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "L-40×40×5": {
+        "path": "models/sections/Lアングル/L-40×40×5.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "L-45×45×4": {
+        "path": "models/sections/Lアングル/L-45×45×4.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "L-45×45×5": {
+        "path": "models/sections/Lアングル/L-45×45×5.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "L-50×50×4": {
+        "path": "models/sections/Lアングル/L-50×50×4.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "L-50×50×5": {
+        "path": "models/sections/Lアングル/L-50×50×5.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "L-50×50×6": {
+        "path": "models/sections/Lアングル/L-50×50×6.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "L-60×60×4": {
+        "path": "models/sections/Lアングル/L-60×60×4.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "L-60×60×5": {
+        "path": "models/sections/Lアングル/L-60×60×5.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "L-65×65×5": {
+        "path": "models/sections/Lアングル/L-65×65×5.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "L-65×65×6": {
+        "path": "models/sections/Lアングル/L-65×65×6.f3d",
+        "description": "ユーザー登録モデル"
+      }
+    }
   },
   "Lアングル(不等辺)": {
     "models": {}
