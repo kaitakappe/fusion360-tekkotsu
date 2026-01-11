@@ -1,11 +1,128 @@
 {
   "H形鋼": {
-    "models": {}
+    "models": {
+      "H-100×50×5×7": {
+        "path": "models/sections/H形鋼/H-100×50×5×7.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "H-100×100×6×8": {
+        "path": "models/sections/H形鋼/H-100×100×6×8.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "H-125×60×6×8": {
+        "path": "models/sections/H形鋼/H-125×60×6×8.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "H-125×125×6.5×9": {
+        "path": "models/sections/H形鋼/H-125×125×6.5×9.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "H-148×100×6×9": {
+        "path": "models/sections/H形鋼/H-148×100×6×9.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "H-150×75×5×7": {
+        "path": "models/sections/H形鋼/H-150×75×5×7.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "H-150×150×7×10": {
+        "path": "models/sections/H形鋼/H-150×150×7×10.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "H-175×90×5×8": {
+        "path": "models/sections/H形鋼/H-175×90×5×8.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "H-175×175×7.5×11": {
+        "path": "models/sections/H形鋼/H-175×175×7.5×11.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "H-194×150×6×9": {
+        "path": "models/sections/H形鋼/H-194×150×6×9.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "H-198×99×4.5×7": {
+        "path": "models/sections/H形鋼/H-198×99×4.5×7.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "H-200×100×5.5×8": {
+        "path": "models/sections/H形鋼/H-200×100×5.5×8.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "H-200×200×8×12": {
+        "path": "models/sections/H形鋼/H-200×200×8×12.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "H-200×204×12×12": {
+        "path": "models/sections/H形鋼/H-200×204×12×12.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "H-208×202×10×16": {
+        "path": "models/sections/H形鋼/H-208×202×10×16.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "H-244×175×7×11": {
+        "path": "models/sections/H形鋼/H-244×175×7×11.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "H-244×252×11×11": {
+        "path": "models/sections/H形鋼/H-244×252×11×11.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "H-248×124×5×8": {
+        "path": "models/sections/H形鋼/H-248×124×5×8.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "H-248×249×8×13": {
+        "path": "models/sections/H形鋼/H-248×249×8×13.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "H-250×125×6×9": {
+        "path": "models/sections/H形鋼/H-250×125×6×9.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "H-250×250×9×14": {
+        "path": "models/sections/H形鋼/H-250×250×9×14.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "H-294×200×8×12": {
+        "path": "models/sections/H形鋼/H-294×200×8×12.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "H-294×302×12×12": {
+        "path": "models/sections/H形鋼/H-294×302×12×12.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "H-298×149×5×8": {
+        "path": "models/sections/H形鋼/H-298×149×5×8.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "H-298×201×9×14": {
+        "path": "models/sections/H形鋼/H-298×201×9×14.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "H-298×299×9×14": {
+        "path": "models/sections/H形鋼/H-298×299×9×14.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "H-300×150×6×9": {
+        "path": "models/sections/H形鋼/H-300×150×6×9.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "H-300×300×10×15": {
+        "path": "models/sections/H形鋼/H-300×300×10×15.f3d",
+        "description": "ユーザー登録モデル"
+      }
+    }
   },
   "溝形鋼": {
     "models": {
-      "C-075X040X005X007": {
-        "path": "models/sections/溝形鋼/C-075X040X005X007.f3d",
+      "C-75×40×5×7": {
+        "path": "models/sections/溝形鋼/C-75×40×5×7.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "C-100×50×5×7.5": {
+        "path": "models/sections/溝形鋼/C-100×50×5×7.5.f3d",
         "description": "ユーザー登録モデル"
       }
     }

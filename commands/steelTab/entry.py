@@ -31,8 +31,15 @@ def start():
         if existing:
             existing.deleteMe()
         try:
-            ctrl = panel.controls.addCommandById(cmd_id)
-            ctrl.isPromoted = True
+            cmd_def = ui.commandDefinitions.itemById(cmd_id)
+            if not cmd_def:
+                futil.log(f'コマンド定義が見つかりません: {cmd_id}', force_console=True)
+            else:
+                try:
+                    ctrl = panel.controls.addCommand(cmd_def, '', False)
+                except Exception:
+                    ctrl = panel.controls.addCommand(cmd_def, '', False)
+                ctrl.isPromoted = True
         except Exception as e:
             futil.log(f'コントロールの追加に失敗しました: {e}', force_console=True)
 

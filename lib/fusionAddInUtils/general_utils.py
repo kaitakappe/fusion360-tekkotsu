@@ -62,3 +62,30 @@ def handle_error(name: str, show_message_box: bool = False):
     # If desired you could show an error as a message box.
     if show_message_box:
         ui.messageBox(f'{name}\n{traceback.format_exc()}')
+
+
+def set_command_resource_folder(cmd_def, module_file: str):
+    """Try to set the `resourceFolder` attribute on a command definition.
+
+    Some Fusion versions expose `resourceFolder` and some do not. This helper
+    attempts to set it to the `resources` directory next to the provided
+    module file. Failures are logged but not raised.
+    """
+    try:
+        if not cmd_def:
+            return
+        base = os.path.dirname(os.path.abspath(module_file))
+        res_dir = os.path.join(base, 'resources')
+        if not os.path.isdir(res_dir):
+            return
+        # Fusion API may expect forward slashes
+        res_dir = res_dir.replace('\\', '/')
+        try:
+            setattr(cmd_def, 'resourceFolder', res_dir)
+        except Exception:
+            try:
+                cmd_def.resourceFolder = res_dir
+            except Exception as e:
+                log(f'set_command_resource_folder: failed to set resourceFolder: {e}', force_console=True)
+    except Exception as e:
+        log(f'set_command_resource_folder: unexpected error: {e}', force_console=True)

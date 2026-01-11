@@ -33,6 +33,10 @@ local_handlers = []
 def start():
     # Create a command Definition.
     cmd_def = ui.commandDefinitions.addButtonDefinition(CMD_ID, CMD_NAME, CMD_Description, '')
+    try:
+        futil.set_command_resource_folder(cmd_def, __file__)
+    except Exception:
+        pass
 
     # Add command created handler. The function passed here will be executed when the command is executed.
     futil.add_handler(cmd_def.commandCreated, command_created)

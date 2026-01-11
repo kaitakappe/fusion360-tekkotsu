@@ -34,38 +34,8 @@ def load_gusset_models():
 GUSSET_PLATE_MODELS = load_gusset_models()
 
 def start():
-    cmd_def = ui.commandDefinitions.itemById(CMD_ID)
-    if not cmd_def:
-        cmd_def = ui.commandDefinitions.addButtonDefinition(CMD_ID, CMD_NAME, CMD_Description, '')
-        futil.add_handler(cmd_def.commandCreated, command_created)
-
-    workspace = ui.workspaces.itemById(WORKSPACE_ID)
-    if not workspace:
-        futil.log(f'Workspace not found: {WORKSPACE_ID}')
-        return
-
-    panel_ids = [PANEL_ID, 'SolidScriptsAddinsPanel', 'SolidCreatePanel']
-    added = False
-    for pid in panel_ids:
-        panel = workspace.toolbarPanels.itemById(pid)
-        if not panel:
-            futil.log(f'Panel not found: {pid}')
-            continue
-        existing = panel.controls.itemById(CMD_ID)
-        if existing:
-            existing.deleteMe()
-        try:
-            control = panel.controls.addCommand(cmd_def, COMMAND_BESIDE_ID or '', False)
-        except Exception:
-            try:
-                control = panel.controls.addCommand(cmd_def, '', False)
-            except Exception as e:
-                futil.log(f'Failed to add control to panel {pid}: {e}', force_console=True)
-                continue
-        control.isPromoted = IS_PROMOTED
-        added = True
-    if not added:
-        futil.log('Failed to add command to any known panels', force_console=True)
+    # Disabled - UI elements removed from menu
+    pass
 
 def stop():
     workspace = ui.workspaces.itemById(WORKSPACE_ID)

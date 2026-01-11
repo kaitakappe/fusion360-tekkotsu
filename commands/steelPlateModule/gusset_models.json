@@ -1,9 +1,5 @@
 {
   "_note": "現在登録されているモデルはありません",
-  "GPL H200 to H150G1": {
-    "path": "models/GPL H200 to H150G1.f3d",
-    "description": "ユーザー登録モデル"
-  },
   "GPL H200 to H175G2": {
     "path": "models/GPL H200 to H175G2.f3d",
     "description": "ユーザー登録モデル"
@@ -154,6 +150,10 @@
   },
   "GPL H400 to H250G38": {
     "path": "models/GPL H400 to H250G38.f3d",
+    "description": "ユーザー登録モデル"
+  },
+  "GPL H200 to H150G1": {
+    "path": "models/GPL H200 to H150G1.f3d",
     "description": "ユーザー登録モデル"
   }
 }

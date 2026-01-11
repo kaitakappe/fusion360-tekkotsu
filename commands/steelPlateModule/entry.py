@@ -24,6 +24,7 @@ PANEL_ID = 'SolidCreatePanel'
 COMMAND_BESIDE_ID = ''
 
 local_handlers = []
+_executing = False  # 二重実行防止フラグ
 
 # ============================================================================
 # モデル管理
@@ -173,7 +174,8 @@ SPLICE_PLATE_TYPES = {
 def start():
     cmd_def = ui.commandDefinitions.itemById(CMD_ID)
     if not cmd_def:
-        cmd_def = ui.commandDefinitions.addButtonDefinition(CMD_ID, CMD_NAME, CMD_Description, '')
+        resources_folder = str(Path(__file__).parent / 'resources')
+        cmd_def = ui.commandDefinitions.addButtonDefinition(CMD_ID, CMD_NAME, CMD_Description, resources_folder)
         futil.add_handler(cmd_def.commandCreated, command_created)
 
     workspace = ui.workspaces.itemById(WORKSPACE_ID)
@@ -265,24 +267,68 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     splice_target.addSelectionFilter('Edges')
     splice_target.setSelectionLimits(0, 1)
 
-    # --- ガセットタブ ---
+    # --- ガセットタブ（配置 / 登録 切替） ---
     gusset_inputs = tab_gusset.children
-    gusset_model_input = gusset_inputs.addDropDownCommandInput('gusset_model', 'ガセットプレートモデル', 
+    
+    # モード選択（配置 / 登録）
+    gusset_mode = gusset_inputs.addDropDownCommandInput('gusset_mode', 'モード', adsk.core.DropDownStyles.TextListDropDownStyle)
+    gusset_mode.listItems.add('配置', True)
+    gusset_mode.listItems.add('登録', False)
+    
+    # 配置用グループ
+    gusset_place_grp = gusset_inputs.addGroupCommandInput('gusset_place_grp', '配置')
+    gusset_place_children = gusset_place_grp.children
+    gusset_model_input = gusset_place_children.addDropDownCommandInput('gusset_model', 'ガセットプレートモデル', 
                                                                adsk.core.DropDownStyles.TextListDropDownStyle)
     refresh_gusset_model_list(gusset_model_input)
 
-    gusset_target = gusset_inputs.addSelectionInput('gusset_target_sel', '配置先', '面/点/エッジを選択')
+    gusset_target = gusset_place_children.addSelectionInput('gusset_target_sel', '配置先', '面/点/エッジを選択')
     gusset_target.addSelectionFilter('PlanarFaces')
     gusset_target.addSelectionFilter('Vertices')
     gusset_target.addSelectionFilter('Edges')
     gusset_target.setSelectionLimits(0, 1)
+    
+    # 登録用グループ
+    gusset_reg_grp = gusset_inputs.addGroupCommandInput('gusset_reg_grp', 'ファイル登録')
+    gusset_reg_children = gusset_reg_grp.children
+    gusset_reg_children.addStringValueInput('gusset_register_name', '登録名', '')
+    gusset_reg_children.addStringValueInput('gusset_register_desc', '説明', '')
+    gusset_reg_children.addStringValueInput('gusset_register_path', 'ファイルパス', '')
+    gusset_reg_children.addBoolValueInput('gusset_browse_file', 'ファイルを選択...', False, '', False)
+    
+    # 初期表示（デフォルトは「配置」のみ）
+    gusset_place_grp.isVisible = True
+    gusset_reg_grp.isVisible = False
 
-    # --- カスタムタブ（ファイル登録） ---
+    # --- カスタムタブ（配置 / 登録 切替） ---
     custom_inputs = tab_custom.children
-    custom_inputs.addStringValueInput('custom_register_name', '登録名', '')
-    custom_inputs.addStringValueInput('custom_register_desc', '説明', '')
-    custom_inputs.addStringValueInput('custom_register_path', 'ファイルパス', '')
-    custom_inputs.addBoolValueInput('custom_browse_file', 'ファイルを選択...', False, '', False)
+    # モード選択（配置 / 登録）
+    custom_mode = custom_inputs.addDropDownCommandInput('custom_mode', 'モード', adsk.core.DropDownStyles.TextListDropDownStyle)
+    custom_mode.listItems.add('配置', True)
+    custom_mode.listItems.add('登録', False)
+
+    # 配置用グループ
+    custom_place_grp = custom_inputs.addGroupCommandInput('custom_place_grp', '配置')
+    custom_place_children = custom_place_grp.children
+    custom_model_input = custom_place_children.addDropDownCommandInput('custom_model', 'モデル', adsk.core.DropDownStyles.TextListDropDownStyle)
+    refresh_custom_model_list(custom_model_input)
+    custom_target = custom_place_children.addSelectionInput('custom_target_sel', '配置先', '面/点/エッジを選択')
+    custom_target.addSelectionFilter('PlanarFaces')
+    custom_target.addSelectionFilter('Vertices')
+    custom_target.addSelectionFilter('Edges')
+    custom_target.setSelectionLimits(0, 1)
+
+    # 登録用グループ
+    custom_reg_grp = custom_inputs.addGroupCommandInput('custom_reg_grp', 'ファイル登録')
+    custom_reg_children = custom_reg_grp.children
+    custom_reg_children.addStringValueInput('custom_register_name', '登録名', '')
+    custom_reg_children.addStringValueInput('custom_register_desc', '説明', '')
+    custom_reg_children.addStringValueInput('custom_register_path', 'ファイルパス', '')
+    custom_reg_children.addBoolValueInput('custom_browse_file', 'ファイルを選択...', False, '', False)
+
+    # 初期表示（デフォルトは「配置」のみ）
+    custom_place_grp.isVisible = True
+    custom_reg_grp.isVisible = False
 
     # --- 形鋼タブ ---
     section_inputs = tab_section.children
@@ -349,9 +395,15 @@ def set_splice_visibility(inputs: adsk.core.CommandInputs, splice_mode: str):
             inp.isVisible = (splice_mode == '登録モデル配置')
 
 def command_execute(args: adsk.core.CommandEventArgs):
-    inputs = args.command.commandInputs
-
+    global _executing
+    if _executing:
+        futil.log('command_execute: 既に実行中のため無視', force_console=True)
+        return
+    
+    _executing = True
     try:
+        inputs = args.command.commandInputs
+
         tab_splice = inputs.itemById('tab_splice')
         tab_gusset = inputs.itemById('tab_gusset')
         tab_custom = inputs.itemById('tab_custom')
@@ -371,43 +423,102 @@ def command_execute(args: adsk.core.CommandEventArgs):
             create_splice_plate(plate_type, thickness, hole_diameter, placement_point)
 
         elif tab_gusset and tab_gusset.isActive:
-            model_name = inputs.itemById('gusset_model').selectedItem.name
-            target_sel = inputs.itemById('gusset_target_sel')
-            placement_point = adsk.core.Point3D.create(0, 0, 0)
-            if target_sel and target_sel.selectionCount > 0:
-                try:
-                    placement_point = target_sel.selection(0).point
-                except Exception:
-                    placement_point = adsk.core.Point3D.create(0, 0, 0)
-            place_gusset_model(model_name, placement_point)
+            mode_input = inputs.itemById('gusset_mode')
+            if mode_input and mode_input.selectedItem and mode_input.selectedItem.name == '配置':
+                model_name = inputs.itemById('gusset_model').selectedItem.name
+                target_sel = inputs.itemById('gusset_target_sel')
+                placement_point = adsk.core.Point3D.create(0, 0, 0)
+                if target_sel and target_sel.selectionCount > 0:
+                    try:
+                        placement_point = target_sel.selection(0).point
+                    except Exception:
+                        placement_point = adsk.core.Point3D.create(0, 0, 0)
+                place_gusset_model(model_name, placement_point)
+            else:
+                # 登録処理
+                reg_name_input = inputs.itemById('gusset_register_name')
+                reg_name = reg_name_input.value.strip() if reg_name_input else ''
+                reg_desc = inputs.itemById('gusset_register_desc').value.strip()
+                reg_path = inputs.itemById('gusset_register_path').value.strip()
+
+                if reg_path and not reg_name:
+                    reg_name = Path(reg_path).stem
+                    if reg_name_input:
+                        reg_name_input.value = reg_name
+
+                if not reg_name:
+                    ui.messageBox('登録名を入力してください')
+                    return
+
+                if not reg_path:
+                    reg_path = _open_file_dialog()
+                    if not reg_path:
+                        return
+                    inputs.itemById('gusset_register_path').value = reg_path
+
+                if not Path(reg_path).exists():
+                    ui.messageBox(f'指定のファイルが見つかりません:\n{reg_path}')
+                    return
+
+                register_gusset_model_to_json(reg_name, reg_path, reg_desc or 'ユーザー登録モデル')
+                ui.messageBox(f'モデル"{reg_name}"を登録しました')
+                refresh_gusset_model_list(inputs.itemById('gusset_model'))
+                # 入力欄をクリア
+                inputs.itemById('gusset_register_name').value = ''
+                inputs.itemById('gusset_register_path').value = ''
+                inputs.itemById('gusset_register_desc').value = ''
 
         elif tab_custom and tab_custom.isActive:
-            reg_name_input = inputs.itemById('custom_register_name')
-            reg_name = reg_name_input.value.strip()
-            reg_desc = inputs.itemById('custom_register_desc').value.strip()
-            reg_path = inputs.itemById('custom_register_path').value.strip()
-
-            if reg_path and not reg_name:
-                reg_name = Path(reg_path).stem
-                reg_name_input.value = reg_name
-
-            if not reg_name:
-                ui.messageBox('登録名を入力してください')
-                return
-
-            if not reg_path:
-                reg_path = _open_file_dialog()
-                if not reg_path:
+            # カスタムタブ: モードに応じて配置または登録を実行
+            mode_input = inputs.itemById('custom_mode')
+            if mode_input and mode_input.selectedItem and mode_input.selectedItem.name == '配置':
+                model_input = inputs.itemById('custom_model')
+                model_name = model_input.selectedItem.name if model_input and model_input.selectedItem else None
+                target_sel = inputs.itemById('custom_target_sel')
+                placement_point = adsk.core.Point3D.create(0, 0, 0)
+                if target_sel and target_sel.selectionCount > 0:
+                    try:
+                        placement_point = target_sel.selection(0).point
+                    except Exception:
+                        placement_point = adsk.core.Point3D.create(0, 0, 0)
+                if not model_name:
+                    ui.messageBox('配置するモデルを選択してください')
                     return
-                inputs.itemById('custom_register_path').value = reg_path
+                place_gusset_model(model_name, placement_point)
+            else:
+                # 登録処理（既存の挙動を保持）
+                reg_name_input = inputs.itemById('custom_register_name')
+                reg_name = reg_name_input.value.strip() if reg_name_input else ''
+                reg_desc = inputs.itemById('custom_register_desc').value.strip()
+                reg_path = inputs.itemById('custom_register_path').value.strip()
 
-            if not Path(reg_path).exists():
-                ui.messageBox(f'指定のファイルが見つかりません:\n{reg_path}')
-                return
+                if reg_path and not reg_name:
+                    reg_name = Path(reg_path).stem
+                    if reg_name_input:
+                        reg_name_input.value = reg_name
 
-            register_gusset_model_to_json(reg_name, reg_path, reg_desc or 'ユーザー登録モデル')
-            ui.messageBox(f'モデル"{reg_name}"を登録しました')
-            refresh_gusset_model_list(inputs.itemById('gusset_model'))
+                if not reg_name:
+                    ui.messageBox('登録名を入力してください')
+                    return
+
+                if not reg_path:
+                    reg_path = _open_file_dialog()
+                    if not reg_path:
+                        return
+                    inputs.itemById('custom_register_path').value = reg_path
+
+                if not Path(reg_path).exists():
+                    ui.messageBox(f'指定のファイルが見つかりません:\n{reg_path}')
+                    return
+
+                register_custom_model_to_json(reg_name, reg_path, reg_desc or 'ユーザー登録モデル')
+                ui.messageBox(f'モデル"{reg_name}"を登録しました')
+                refresh_gusset_model_list(inputs.itemById('gusset_model'))
+                # カスタムタブのモデルリストも更新
+                try:
+                    refresh_custom_model_list(inputs.itemById('custom_model'))
+                except Exception:
+                    pass
 
         elif tab_section and tab_section.isActive:
             mode_input = inputs.itemById('section_mode')
@@ -442,14 +553,48 @@ def command_execute(args: adsk.core.CommandEventArgs):
                     reg_name = Path(reg_path).stem
                     inputs.itemById('section_register_name').value = reg_name
 
+                if not reg_path:
+                    sel = _open_file_dialog(multi=True)
+                    if not sel:
+                        return
+
+                    # 複数選択された場合はリストで返る
+                    if isinstance(sel, list) and len(sel) > 1:
+                        registered = []
+                        for p in sel:
+                            if not Path(p).exists():
+                                futil.log(f'ファイルが見つかりません: {p}', force_console=True)
+                                continue
+                            name = Path(p).stem
+                            register_section_model_to_json(reg_cat, name, p, reg_desc or '形鋼モデル')
+                            registered.append(name)
+
+                        if registered:
+                            ui.messageBox(f'形鋼モデルを登録しました: {", ".join(registered)}')
+                            # カテゴリが一致していればモデルリストを更新
+                            current_cat = inputs.itemById('section_category').selectedItem.name
+                            if current_cat == reg_cat:
+                                refresh_section_model_list(inputs.itemById('section_model'), current_cat)
+                        else:
+                            ui.messageBox('有効なファイルが見つからず、登録は行われませんでした。')
+
+                        # 入力欄をクリア
+                        inputs.itemById('section_register_name').value = ''
+                        inputs.itemById('section_register_path').value = ''
+                        return
+                    else:
+                        # 単一選択
+                        reg_path = sel[0] if isinstance(sel, list) else sel
+                        if not reg_path:
+                            return
+                        inputs.itemById('section_register_path').value = reg_path
+                        if not reg_name:
+                            reg_name = Path(reg_path).stem
+                            inputs.itemById('section_register_name').value = reg_name
+
                 if not reg_name:
                     ui.messageBox('登録名を入力してください')
                     return
-                if not reg_path:
-                    reg_path = _open_file_dialog()
-                    if not reg_path:
-                        return
-                    inputs.itemById('section_register_path').value = reg_path
                 if not Path(reg_path).exists():
                     ui.messageBox(f'指定のファイルが見つかりません:\n{reg_path}')
                     return
@@ -464,10 +609,13 @@ def command_execute(args: adsk.core.CommandEventArgs):
     except Exception as e:
         ui.messageBox(f'エラーが発生しました: {str(e)}')
         futil.log(f'実行エラー: {str(e)}')
+    finally:
+        _executing = False
 
 def command_input_changed(args: adsk.core.InputChangedEventArgs):
     changed_input = args.input
     inputs = args.inputs
+    futil.log(f'command_input_changed: {changed_input.id}', force_console=True)
     
     if changed_input.id == 'splice_plate_type':
         plate_type = changed_input.selectedItem.name
@@ -479,6 +627,35 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
             hole_diameter_input.value = plate_data['hole_dia'] / 10.0
             _update_preview(inputs, plate_data)
     
+    
+
+    # カスタム: モード切替で表示制御
+    if changed_input.id == 'custom_mode':
+        selected = changed_input.selectedItem.name if changed_input.selectedItem else '配置'
+        place_grp = inputs.itemById('custom_place_grp')
+        reg_grp = inputs.itemById('custom_reg_grp')
+        if place_grp: place_grp.isVisible = (selected == '配置')
+        if reg_grp: reg_grp.isVisible = (selected == '登録')
+
+    # ガセット: モード切替で表示制御
+    if changed_input.id == 'gusset_mode':
+        selected = changed_input.selectedItem.name if changed_input.selectedItem else '配置'
+        place_grp = inputs.itemById('gusset_place_grp')
+        reg_grp = inputs.itemById('gusset_reg_grp')
+        if place_grp: place_grp.isVisible = (selected == '配置')
+        if reg_grp: reg_grp.isVisible = (selected == '登録')
+
+    # ガセット: 登録のファイル参照ボタン
+    if changed_input.id == 'gusset_browse_file' and changed_input.value:
+        path = _open_file_dialog()
+        if path:
+            inputs.itemById('gusset_register_path').value = path
+            name_input = inputs.itemById('gusset_register_name')
+            if name_input and not name_input.value.strip():
+                name_input.value = Path(path).stem
+        changed_input.value = False
+
+    # カスタム: 登録のファイル参照ボタン
     if changed_input.id == 'custom_browse_file' and changed_input.value:
         path = _open_file_dialog()
         if path:
@@ -538,7 +715,7 @@ def refresh_gusset_model_list(model_input: adsk.core.DropDownCommandInput):
     global GUSSET_PLATE_MODELS
     GUSSET_PLATE_MODELS = load_gusset_models()
     if GUSSET_PLATE_MODELS:
-        for name in GUSSET_PLATE_MODELS.keys():
+        for name in sorted(GUSSET_PLATE_MODELS.keys()):
             model_input.listItems.add(name, False)
         model_input.listItems.item(0).isSelected = True
         model_input.isEnabled = True
@@ -553,7 +730,7 @@ def refresh_section_model_list(model_input: adsk.core.DropDownCommandInput, cate
     cat_entry = SECTION_STEEL_MODELS.get(category, {"models": {}})
     models = cat_entry.get('models', {})
     if models:
-        for name in models.keys():
+        for name in sorted(models.keys()):
             model_input.listItems.add(name, False)
         model_input.listItems.item(0).isSelected = True
         model_input.isEnabled = True
@@ -594,6 +771,61 @@ def register_gusset_model_to_json(model_name: str, model_path: str, description:
         global GUSSET_PLATE_MODELS
         GUSSET_PLATE_MODELS = models
         futil.log(f'ガセットプレートモデル登録完了: {model_name}')
+    except Exception as e:
+        ui.messageBox(f'モデル登録に失敗しました: {e}')
+        futil.log(f'登録エラー: {e}')
+
+def refresh_custom_model_list(model_input: adsk.core.DropDownCommandInput):
+    model_input.listItems.clear()
+    cfg = Path(__file__).parent / 'custom_models.json'
+    models = {}
+    if cfg.exists():
+        try:
+            with open(cfg, 'r', encoding='utf-8') as f:
+                models = json.load(f)
+        except Exception:
+            models = {}
+
+    if models:
+        for name in sorted(models.keys()):
+            model_input.listItems.add(name, False)
+        model_input.listItems.item(0).isSelected = True
+        model_input.isEnabled = True
+    else:
+        model_input.listItems.add('モデルが登録されていません', True)
+        model_input.isEnabled = False
+
+def register_custom_model_to_json(model_name: str, model_path: str, description: str = ''):
+    try:
+        base_dir = Path(__file__).parent
+        cfg = base_dir / 'custom_models.json'
+        models_dir = base_dir / 'models' / 'custom'
+        models_dir.mkdir(parents=True, exist_ok=True)
+
+        src_path = Path(model_path)
+        if not src_path.exists():
+            ui.messageBox(f'ソースファイルが見つかりません:\n{model_path}')
+            return
+
+        local_file_name = src_path.name
+        local_file_path = models_dir / local_file_name
+
+        shutil.copy2(str(src_path), str(local_file_path))
+        futil.log(f'カスタムモデルをコピー: {src_path} -> {local_file_path}')
+
+        relative_path = str(local_file_path.relative_to(base_dir)).replace('\\', '/')
+
+        models = {}
+        if cfg.exists():
+            with open(cfg, 'r', encoding='utf-8') as f:
+                models = json.load(f)
+
+        models[model_name] = {'path': relative_path, 'description': description or 'ユーザー登録モデル'}
+
+        with open(cfg, 'w', encoding='utf-8') as f:
+            json.dump(models, f, ensure_ascii=False, indent=2)
+
+        futil.log(f'カスタムモデル登録完了: {model_name}')
     except Exception as e:
         ui.messageBox(f'モデル登録に失敗しました: {e}')
         futil.log(f'登録エラー: {e}')
@@ -640,19 +872,32 @@ def register_section_model_to_json(category: str, model_name: str, model_path: s
 # ファイルダイアログ
 # ============================================================================
 
-def _open_file_dialog() -> str:
+def _open_file_dialog(multi: bool = False):
+    """ファイルダイアログを開く。multi=True のときは複数選択を許可し、選択されたファイルのリストを返す。
+    それ以外は単一ファイルパスの文字列を返す。キャンセル時は空の文字列/空リストを返す。"""
     try:
         dlg = ui.createFileDialog()
-        dlg.isMultiSelectEnabled = False
-        dlg.title = 'モデルファイルを選択 (f3d/step/iges)'
+        dlg.isMultiSelectEnabled = bool(multi)
+        dlg.title = 'モデルファイルを選択 (f3d/step/iges)' + (' [複数選択可]' if multi else '')
         dlg.filter = 'Fusion 360 Archive (*.f3d);;STEP Files (*.step; *.stp);;IGES Files (*.iges; *.igs);;All Files (*.*)'
         dlg.filterIndex = 0
         res = dlg.showOpen()
         if res == adsk.core.DialogResults.DialogOK:
-            return dlg.filename
+            if multi:
+                # filenames プロパティで複数ファイルを取得
+                try:
+                    files = []
+                    for i in range(dlg.filenames.count):
+                        files.append(dlg.filenames.item(i))
+                    return files if files else [dlg.filename]
+                except Exception as e:
+                    futil.log(f'複数ファイル取得エラー: {e}', force_console=True)
+                    return [dlg.filename]
+            else:
+                return dlg.filename
     except Exception as e:
         futil.log(f'ファイルダイアログエラー: {e}')
-    return ''
+    return [] if multi else ''
 
 # ============================================================================
 # プレート作成関数
@@ -751,7 +996,7 @@ def place_splice_model(model_name: str, placement_point: adsk.core.Point3D):
             ui.messageBox(f'モデルファイルが見つかりません:\n{model_path_obj}')
             return
 
-        _place_model_impl(design, model_name, model_path_obj, placement_point)
+        _place_model_impl(design, model_name, model_path_obj, placement_point, modify_extrude_height=False)
         ui.messageBox(f'スプライスプレート"{model_name}"を配置しました')
         
     except Exception as e:
@@ -785,7 +1030,8 @@ def place_gusset_model(model_name: str, placement_point: adsk.core.Point3D):
             ui.messageBox(f'モデルファイルが見つかりません:\n{model_path_obj}')
             return
 
-        _place_model_impl(design, model_name, model_path_obj, placement_point)
+        # ガセットプレートは既存ボディを使用するため、modify_extrude_height=False
+        _place_model_impl(design, model_name, model_path_obj, placement_point, modify_extrude_height=False)
         ui.messageBox(f'ガセットプレート"{model_name}"を配置しました')
         
     except Exception as e:
@@ -880,10 +1126,12 @@ def place_section_model(category: str, model_name: str, placement_point: adsk.co
             futil.log(f'コンポーネント原点移動エラー: {e}')
 
         # 押し出しフィーチャーを編集して高さを変更（F3Dの場合）
+        futil.log(f'押し出し高さ変更: target_h_cm={target_h_cm} (from target_height_mm={target_height_mm})', force_console=True)
         extrude_updated = _try_update_extrude_height(occ.component, target_h_cm)
         
         # 押し出し編集が失敗した場合はtransformスケールを使用
         if not extrude_updated:
+            futil.log(f'押し出し編集失敗、スケール適用', force_console=True)
             _apply_transform_scale(occ, target_h_cm)
 
         ui.messageBox(f'形鋼モデル"{model_name}"を配置しました')
@@ -894,78 +1142,76 @@ def place_section_model(category: str, model_name: str, placement_point: adsk.co
 
 
 def _try_update_extrude_height(component: adsk.fusion.Component, target_h_cm: float) -> bool:
-    """コンポーネント内の最長の押し出しを探し、入力した高さに変更する。押し出しがない場合はスケッチから作成する。"""
+    """コンポーネント内の最長の押し出しを探し、入力した高さに変更する。直接編集ができない場合は、スケッチから新しい押し出しを作成する。"""
     try:
         extrudes = component.features.extrudeFeatures
+        futil.log(f'_try_update_extrude_height: 押し出し数={extrudes.count}, target_h_cm={target_h_cm}', force_console=True)
         
-        # 既存の押し出しがある場合は編集
+        # 既存の押し出しがある場合
         if extrudes.count > 0:
             # 最長の押し出しを探索
             max_len = -1.0
             max_extrude = None
             max_type = None
+            max_profile = None
             
             for i in range(extrudes.count):
                 ext = extrudes.item(i)
+                futil.log(f'押し出し[{i}]: name={ext.name if hasattr(ext, "name") else "N/A"}', force_console=True)
                 try:
                     extent = ext.extentOne
                     
                     # DistanceExtentDefinitionの場合
-                    if extent.extentType == adsk.fusion.ExtentTypes.DistanceExtentType:
-                        dist_extent = adsk.fusion.DistanceExtentDefinition.cast(extent)
-                        if dist_extent and dist_extent.distance and dist_extent.distance.value > max_len:
+                    dist_extent = adsk.fusion.DistanceExtentDefinition.cast(extent)
+                    if dist_extent and dist_extent.distance:
+                        futil.log(f'  DistanceExtent: distance.value={dist_extent.distance.value}', force_console=True)
+                        if dist_extent.distance.value > max_len:
                             max_len = dist_extent.distance.value
                             max_extrude = ext
                             max_type = 'distance'
-                    
-                    # SymmetricExtentDefinitionの場合
-                    elif extent.extentType == adsk.fusion.ExtentTypes.SymmetricExtentType:
-                        sym_extent = adsk.fusion.SymmetricExtentDefinition.cast(extent)
-                        if sym_extent and sym_extent.distance:
-                            total_len = sym_extent.distance.value * 2.0
-                            if total_len > max_len:
-                                max_len = total_len
-                                max_extrude = ext
-                                max_type = 'symmetric'
-                except:
-                    continue
-
-            if max_extrude:
-                # 押し出し距離を変更
-                if max_type == 'distance':
-                    max_extrude.setDistanceExtent(False, adsk.core.ValueInput.createByReal(target_h_cm))
-                    return True
-                elif max_type == 'symmetric':
-                    max_extrude.setSymmetricExtent(adsk.core.ValueInput.createByReal(target_h_cm / 2.0), True)
-                    return True
-        
-        # 押し出しがない場合、スケッチから新規作成
-        sketches = component.sketches
-        if sketches.count > 0:
-            # 最初のスケッチを使用（または最も大きいプロファイルを持つスケッチ）
-            for i in range(sketches.count):
-                sketch = sketches.item(i)
-                if sketch.profiles.count > 0:
-                    # 最大面積のプロファイルを取得
-                    max_area = 0
-                    profile = None
-                    for prof in sketch.profiles:
-                        try:
-                            area = prof.areaProperties().area
-                            if area > max_area:
-                                max_area = area
-                                profile = prof
-                        except:
+                            # プロファイルを取得
+                            if ext.profile:
+                                max_profile = ext.profile
                             continue
                     
-                    if profile:
-                        # 押し出しを作成
-                        extrude_input = extrudes.createInput(profile, adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
-                        distance = adsk.core.ValueInput.createByReal(target_h_cm)
-                        extrude_input.setDistanceExtent(False, distance)
-                        extrudes.add(extrude_input)
-                        return True
+                    # SymmetricExtentDefinitionの場合
+                    sym_extent = adsk.fusion.SymmetricExtentDefinition.cast(extent)
+                    if sym_extent and sym_extent.distance:
+                        total_len = sym_extent.distance.value * 2.0
+                        futil.log(f'  SymmetricExtent: total_len={total_len}', force_console=True)
+                        if total_len > max_len:
+                            max_len = total_len
+                            max_extrude = ext
+                            max_type = 'symmetric'
+                            if ext.profile:
+                                max_profile = ext.profile
+                            continue
+                    
+                    futil.log(f'  未対応の押し出しタイプ', force_console=True)
+                except Exception as e:
+                    futil.log(f'  押し出し[{i}]の処理中にエラー: {e}', force_console=True)
+                    continue
+
+            if max_extrude and max_profile:
+                # 押し出し発見。直接編集は難しいため、同じプロファイルで新しい押し出しを作成
+                futil.log(f'最長押し出し発見: max_type={max_type}, max_len={max_len}', force_console=True)
+                try:
+                    # 新しい押し出しを同じプロファイルで作成
+                    extrude_input = extrudes.createInput(max_profile, adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
+                    extrude_input.setDistanceExtent(False, adsk.core.ValueInput.createByReal(target_h_cm))
+                    new_extrude = extrudes.add(extrude_input)
+                    futil.log(f'新しい押し出しを作成: {target_h_cm}cm', force_console=True)
+                    
+                    # 元の押し出しを削除
+                    max_extrude.deleteMe()
+                    futil.log(f'元の押し出しを削除', force_console=True)
+                    
+                    return True
+                except Exception as e:
+                    futil.log(f'新しい押し出し作成失敗: {e}', force_console=True)
+                    return False
         
+        futil.log('押し出しが見つかりませんでした', force_console=True)
         return False
     except Exception as e:
         futil.log(f'押し出し編集エラー: {e}')
@@ -1039,14 +1285,24 @@ def _apply_height_scale_to_occurrence(occ: adsk.fusion.Occurrence, target_h_cm: 
     except Exception as e:
         futil.log(f'高さスケール適用エラー: {e}')
 
-def _place_model_impl(design: adsk.fusion.Design, model_name: str, model_path_obj: Path, placement_point: adsk.core.Point3D, transform: adsk.core.Matrix3D = None):
-    """モデル配置の実装。インポートし、必要なら変換を適用し、Occurrenceを返す。"""
+def _place_model_impl(design: adsk.fusion.Design, model_name: str, model_path_obj: Path, placement_point: adsk.core.Point3D, transform: adsk.core.Matrix3D = None, modify_extrude_height: bool = True):
+    """モデル配置の実装。インポートし、必要なら変換を適用し、Occurrenceを返す。
+    
+    Args:
+        design: デザイン
+        model_name: モデル名
+        model_path_obj: モデルファイルパス
+        placement_point: 配置点
+        transform: 適用するトランスフォーム
+        modify_extrude_height: 押し出しの高さを修正するか（形鋼用、ガセット/カスタムはFalse）
+    """
     base_pt = placement_point or adsk.core.Point3D.create(0, 0, 0)
     default_matrix = adsk.core.Matrix3D.create()
     default_matrix.translation = adsk.core.Vector3D.create(base_pt.x, base_pt.y, base_pt.z)
 
     occs = design.rootComponent.occurrences
     before_count = occs.count
+    futil.log(f'インポート前: コンポーネント数={before_count}', force_console=True)
     
     import_manager = app.importManager
     opts = None
@@ -1062,12 +1318,82 @@ def _place_model_impl(design: adsk.fusion.Design, model_name: str, model_path_ob
 
     import_manager.importToTarget(opts, design.rootComponent)
     after_count = occs.count
+    futil.log(f'インポート後: コンポーネント数={after_count}, 差分={after_count - before_count}', force_console=True)
+    
+    # 追加されたコンポーネントをすべてログ出力
     if after_count > before_count:
-        occ = occs.item(after_count - 1)
+        futil.log(f'追加されたコンポーネント一覧:', force_console=True)
+        for i in range(before_count, after_count):
+            comp = occs.item(i)
+            futil.log(f'  [{i}]: {comp.component.name if comp.component else "N/A"}', force_console=True)
+    
+    if after_count > before_count:
+        # 複数追加された場合、最初のものを使用（他は削除）
+        added_count = after_count - before_count
+        if added_count > 1:
+            futil.log(f'警告: {added_count}個のコンポーネントが追加されました。最初のものを使用し、他は削除します', force_console=True)
+            # 後から追加された順に逆順で削除（インデックスがズレないように）
+            for i in range(after_count - 1, before_count, -1):
+                comp_to_delete = occs.item(i)
+                if comp_to_delete != occs.item(before_count):  # 最初のものは削除しない
+                    futil.log(f'削除: {comp_to_delete.component.name if comp_to_delete.component else "N/A"}', force_console=True)
+                    comp_to_delete.deleteMe()
+        
+        occ = occs.item(before_count)  # 最初に追加されたコンポーネントを取得
+        futil.log(f'使用するコンポーネント: {occ.component.name if occ.component else "N/A"}', force_console=True)
+        
+        # コンポーネント内のボディ数を確認
+        if occ.component:
+            body_count = occ.component.bRepBodies.count
+            futil.log(f'コンポーネント内のボディ数: {body_count}', force_console=True)
+            for i in range(body_count):
+                body = occ.component.bRepBodies.item(i)
+                futil.log(f'  ボディ[{i}]: {body.name if hasattr(body, "name") else "N/A"}', force_console=True)
+            
+            # ネストされたコンポーネントがある場合を検出
+            comp_count = occ.component.occurrences.count
+            futil.log(f'コンポーネント内の子コンポーネント数: {comp_count}', force_console=True)
+            
+            if comp_count > 0 and body_count == 0:
+                # 外側が空で内側にコンポーネントがある場合、その情報をログに出力
+                futil.log(f'警告: ネストされたコンポーネント構造が検出されました', force_console=True)
+                for i in range(comp_count):
+                    child_occ = occ.component.occurrences.item(i)
+                    child_comp = child_occ.component
+                    if child_comp:
+                        futil.log(f'  子コンポーネント[{i}]: {child_comp.name}', force_console=True)
+                        for j in range(child_comp.bRepBodies.count):
+                            child_body = child_comp.bRepBodies.item(j)
+                            futil.log(f'    ボディ: {child_body.name}', force_console=True)
+        
         occ.transform = transform if transform else default_matrix
         try:
             if occ.component:
-                occ.component.name = model_name
+                # 現在のコンポーネント名、または指定モデル名から末尾の(番号)を除去し、末尾に半角スペース1個を付与
+                import re
+                current_name = occ.component.name if hasattr(occ.component, 'name') else model_name
+                base_name = current_name or model_name
+                clean_name = re.sub(r'\s*\(\d+\)\s*$', '', base_name).rstrip() + ' '
+                occ.component.name = clean_name
+                # 可能ならオカレンス名も揃える（失敗しても無視）
+                try:
+                    occ.name = clean_name
+                except Exception:
+                    pass
+                # 子コンポーネントがある場合もクリーンアップ（ガセットで内包されるケースに対応）
+                try:
+                    child_occs = occ.component.occurrences
+                    for i in range(child_occs.count):
+                        ch = child_occs.item(i)
+                        if ch.component and hasattr(ch.component, 'name'):
+                            ch_name = ch.component.name or ''
+                            ch_clean = re.sub(r'\s*\(\d+\)\s*$', '', ch_name).rstrip() + ' '
+                            if ch_clean != ch_name:
+                                ch.component.name = ch_clean
+                                futil.log(f'子コンポーネント名をクリーン: {ch_name} -> {ch_clean}', force_console=True)
+                except Exception:
+                    pass
+                futil.log(f'コンポーネント名を設定: {clean_name}', force_console=True)
         except Exception as rename_err:
             futil.log(f'モデル名設定エラー: {rename_err}')
         return occ
