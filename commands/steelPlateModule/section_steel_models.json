@@ -238,13 +238,23 @@
     "models": {}
   },
   "角型鋼(長方形)": {
-    "models": {}
+    "models": {
+      "▢-150×100×4.5": {
+        "path": "models/sections/角型鋼(長方形)/▢-150×100×4.5.f3d",
+        "description": "ユーザー登録モデル"
+      }
+    }
   },
   "ハット形鋼": {
     "models": {}
   },
   "リップ溝形鋼": {
-    "models": {}
+    "models": {
+      "RC-150×75×25×4.5": {
+        "path": "models/sections/リップ溝形鋼/RC-150×75×25×4.5.f3d",
+        "description": "ユーザー登録モデル"
+      }
+    }
   },
   "リップZ形鋼": {
     "models": {}
