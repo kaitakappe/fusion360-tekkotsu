@@ -249,7 +249,8 @@ def place_gusset_model(model_name: str, placement_point: adsk.core.Point3D):
         matrix = adsk.core.Matrix3D.create()
         matrix.translation = adsk.core.Vector3D.create(base_pt.x, base_pt.y, base_pt.z)
 
-        occs = design.rootComponent.occurrences
+        target_comp = futil.get_target_component(design)
+        occs = target_comp.occurrences
         before_count = occs.count
         try:
             import_manager = app.importManager
@@ -264,7 +265,7 @@ def place_gusset_model(model_name: str, placement_point: adsk.core.Point3D):
             else:
                 opts = import_manager.createImportOptions(str(model_path_obj))
 
-            import_manager.importToTarget(opts, design.rootComponent)
+            import_manager.importToTarget(opts, target_comp)
             after_count = occs.count
             if after_count > before_count:
                 occ = occs.item(after_count - 1)

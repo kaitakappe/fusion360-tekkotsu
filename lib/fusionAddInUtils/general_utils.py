@@ -89,3 +89,67 @@ def set_command_resource_folder(cmd_def, module_file: str):
                 log(f'set_command_resource_folder: failed to set resourceFolder: {e}', force_console=True)
     except Exception as e:
         log(f'set_command_resource_folder: unexpected error: {e}', force_console=True)
+
+
+def get_target_component(design):
+    """アクティブなコンポーネント内にモデルを挿入するためのターゲットコンポーネントを取得します。
+    
+    Fusion 360でコンポーネント編集モード中（ダブルクリックでコンポーネント内に入った状態）のターゲットコンポーネントを返します。
+    コンポーネント編集モードでない場合はrootComponentを返します。
+    
+    Arguments:
+    design -- 対象のDesignオブジェクト
+    
+    Returns:
+    ターゲットコンポーネント
+    """
+    try:
+        if not design:
+            return None
+        
+        import adsk.fusion
+        import adsk.core
+        
+        # 方法1: activeComponentを確認
+        if hasattr(design, 'activeComponent'):
+            active_comp = design.activeComponent
+            if active_comp:
+                log(f'get_target_component: activeComponent={active_comp.name}', force_console=True)
+                return active_comp
+        
+        # 方法2: rootComponentを返す
+        if hasattr(design, 'rootComponent'):
+            root = design.rootComponent
+            log(f'get_target_component: rootComponentを使用', force_console=True)
+            return root
+            
+    except Exception as e:
+        log(f'get_target_component エラー: {e}', force_console=True)
+    
+    return None
+
+
+def format_component_name(name: str) -> str:
+    """コンポーネント名を整形します。
+    
+    括弧付き数字（例：(1), (2)）を削除し、最後の文字の後に半角スペースを挿入します。
+    例: 'SPL H200用A1(1)' → 'SPL H200用A1 '
+    
+    Arguments:
+    name -- 元のコンポーネント名
+    
+    Returns:
+    整形されたコンポーネント名
+    """
+    import re
+    
+    if not name:
+        return name
+    
+    # 括弧付き数字（例：(1), (2)）を削除
+    formatted = re.sub(r'\(\d+\)$', '', name)
+    
+    # 最後に半角スペースを追加
+    formatted = formatted + ' '
+    
+    return formatted

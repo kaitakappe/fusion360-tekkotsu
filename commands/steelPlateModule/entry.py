@@ -79,6 +79,29 @@ def load_section_models():
 
 SECTION_STEEL_MODELS = load_section_models()
 
+# 配管接手カテゴリ
+PIPING_FITTINGS_CATEGORIES = [
+    '90°エルボ', '45°エルボ', '同径ティー', '径違いティー',
+    '同心レジューサ', '偏心レジューサ', 'キャップ'
+]
+
+def load_piping_fittings_models():
+    models = {}
+    cfg = Path(__file__).parent / 'piping_fittings_models.json'
+    if cfg.exists():
+        try:
+            with open(cfg, 'r', encoding='utf-8') as f:
+                models = json.load(f)
+        except Exception as e:
+            futil.log(f'配管接手モデル設定の読み込みエラー: {e}')
+    # カテゴリの初期化（欠けているカテゴリを空で用意）
+    for cat in PIPING_FITTINGS_CATEGORIES:
+        if cat not in models:
+            models[cat] = {"models": {}}
+    return models
+
+PIPING_FITTINGS_MODELS = load_piping_fittings_models()
+
 # スプライスプレートの種類と寸法データ（H鋼フランジ部用）
 SPLICE_PLATE_TYPES = {
     # H200用
@@ -375,6 +398,47 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     section_place_grp.isVisible = True
     section_reg_grp.isVisible = False
 
+    # --- 配管接手タブ ---
+    tab_piping = inputs.addTabCommandInput('tab_piping', '配管接手')
+    piping_inputs = tab_piping.children
+    # モード選択（配置 / 登録）
+    piping_mode = piping_inputs.addDropDownCommandInput('piping_mode', 'モード', adsk.core.DropDownStyles.TextListDropDownStyle)
+    piping_mode.listItems.add('配置', True)
+    piping_mode.listItems.add('登録', False)
+
+    # 配置用グループ
+    piping_place_grp = piping_inputs.addGroupCommandInput('piping_place_grp', '配置')
+    piping_place_children = piping_place_grp.children
+    piping_cat_input = piping_place_children.addDropDownCommandInput('piping_category', 'カテゴリ', adsk.core.DropDownStyles.TextListDropDownStyle)
+    for cat in PIPING_FITTINGS_CATEGORIES:
+        piping_cat_input.listItems.add(cat, False)
+    piping_cat_input.listItems.item(0).isSelected = True
+
+    piping_model_input = piping_place_children.addDropDownCommandInput('piping_model', 'モデル', adsk.core.DropDownStyles.TextListDropDownStyle)
+    refresh_piping_model_list(piping_model_input, PIPING_FITTINGS_CATEGORIES[0])
+
+    piping_target = piping_place_children.addSelectionInput('piping_target_sel', '配置先', '面/点/エッジを選択')
+    piping_target.addSelectionFilter('PlanarFaces')
+    piping_target.addSelectionFilter('Vertices')
+    piping_target.addSelectionFilter('Edges')
+    piping_target.setSelectionLimits(0, 1)
+
+    # 登録用グループ
+    piping_reg_grp = piping_inputs.addGroupCommandInput('piping_reg_grp', 'ファイル登録')
+    piping_reg_children = piping_reg_grp.children
+    piping_reg_cat = piping_reg_children.addDropDownCommandInput('piping_reg_category', 'カテゴリ', adsk.core.DropDownStyles.TextListDropDownStyle)
+    for cat in PIPING_FITTINGS_CATEGORIES:
+        piping_reg_cat.listItems.add(cat, False)
+    piping_reg_cat.listItems.item(0).isSelected = True
+    piping_reg_children.addStringValueInput('piping_register_name', '登録名', '')
+    piping_reg_children.addStringValueInput('piping_register_desc', '説明', '')
+    piping_reg_children.addStringValueInput('piping_register_path', 'ファイルパス', '')
+    piping_reg_children.addBoolValueInput('piping_browse_file', 'ファイルを選択...', False, '', False)
+
+    # 初期表示（デフォルトは「配置」のみ）
+    piping_place_grp.isVisible = True
+    piping_reg_grp.isVisible = False
+
     set_splice_visibility(inputs, '標準作成')
     futil.add_handler(args.command.inputChanged, command_input_changed, local_handlers=local_handlers)
     # OK押下時の実行イベント（未登録だと何も起きない）
@@ -606,6 +670,86 @@ def command_execute(args: adsk.core.CommandEventArgs):
                 if current_cat == reg_cat:
                     refresh_section_model_list(inputs.itemById('section_model'), current_cat)
 
+        tab_piping = inputs.itemById('tab_piping')
+        if tab_piping and tab_piping.isActive:
+            mode_input = inputs.itemById('piping_mode')
+            if mode_input.selectedItem and mode_input.selectedItem.name == '配置':
+                cat = inputs.itemById('piping_category').selectedItem.name
+                model_name = inputs.itemById('piping_model').selectedItem.name
+                target_sel = inputs.itemById('piping_target_sel')
+                placement_point = adsk.core.Point3D.create(0, 0, 0)
+                if target_sel and target_sel.selectionCount > 0:
+                    try:
+                        placement_point = target_sel.selection(0).point
+                    except Exception:
+                        placement_point = adsk.core.Point3D.create(0, 0, 0)
+                if not model_name or '登録されていません' in model_name:
+                    ui.messageBox('配置するモデルを選択してください')
+                    return
+                place_piping_model(cat, model_name, placement_point)
+            else:
+                reg_cat = inputs.itemById('piping_reg_category').selectedItem.name
+                reg_name = inputs.itemById('piping_register_name').value.strip()
+                reg_desc = inputs.itemById('piping_register_desc').value.strip()
+                reg_path = inputs.itemById('piping_register_path').value.strip()
+
+                if reg_path and not reg_name:
+                    reg_name = Path(reg_path).stem
+                    inputs.itemById('piping_register_name').value = reg_name
+
+                if not reg_path:
+                    sel = _open_file_dialog(multi=True)
+                    if not sel:
+                        return
+
+                    # 複数選択された場合はリストで返る
+                    if isinstance(sel, list) and len(sel) > 1:
+                        registered = []
+                        for p in sel:
+                            if not Path(p).exists():
+                                futil.log(f'ファイルが見つかりません: {p}', force_console=True)
+                                continue
+                            name = Path(p).stem
+                            register_piping_model_to_json(reg_cat, name, p, reg_desc or '配管接手モデル')
+                            registered.append(name)
+
+                        if registered:
+                            ui.messageBox(f'配管接手モデルを登録しました: {", ".join(registered)}')
+                            # カテゴリが一致していればモデルリストを更新
+                            current_cat = inputs.itemById('piping_category').selectedItem.name
+                            if current_cat == reg_cat:
+                                refresh_piping_model_list(inputs.itemById('piping_model'), current_cat)
+                        else:
+                            ui.messageBox('有効なファイルが見つかり、登録は行われませんでした。')
+
+                        # 入力欄をクリア
+                        inputs.itemById('piping_register_name').value = ''
+                        inputs.itemById('piping_register_path').value = ''
+                        return
+                    else:
+                        # 単一選択
+                        reg_path = sel[0] if isinstance(sel, list) else sel
+                        if not reg_path:
+                            return
+                        inputs.itemById('piping_register_path').value = reg_path
+                        if not reg_name:
+                            reg_name = Path(reg_path).stem
+                            inputs.itemById('piping_register_name').value = reg_name
+
+                if not reg_name:
+                    ui.messageBox('登録名を入力してください')
+                    return
+                if not Path(reg_path).exists():
+                    ui.messageBox(f'指定のファイルが見つかりません:\n{reg_path}')
+                    return
+
+                register_piping_model_to_json(reg_cat, reg_name, reg_path, reg_desc or 'ユーザー登録モデル')
+                ui.messageBox(f'配管接手モデル"{reg_name}"を登録しました')
+                # カテゴリが一致していればモデルリストを更新
+                current_cat = inputs.itemById('piping_category').selectedItem.name
+                if current_cat == reg_cat:
+                    refresh_piping_model_list(inputs.itemById('piping_model'), current_cat)
+
     except Exception as e:
         ui.messageBox(f'エラーが発生しました: {str(e)}')
         futil.log(f'実行エラー: {str(e)}')
@@ -689,6 +833,30 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
                 name_input.value = Path(path).stem
         changed_input.value = False
 
+    # 配管接手: モード切替で表示制御
+    if changed_input.id == 'piping_mode':
+        selected = changed_input.selectedItem.name if changed_input.selectedItem else '配置'
+        place_grp = inputs.itemById('piping_place_grp')
+        reg_grp = inputs.itemById('piping_reg_grp')
+        if place_grp: place_grp.isVisible = (selected == '配置')
+        if reg_grp: reg_grp.isVisible = (selected == '登録')
+
+    # 配管接手: カテゴリ変更でモデル一覧を更新
+    if changed_input.id == 'piping_category':
+        cat = changed_input.selectedItem.name
+        model_input = inputs.itemById('piping_model')
+        refresh_piping_model_list(model_input, cat)
+
+    # 配管接手: 登録のファイル参照ボタン
+    if changed_input.id == 'piping_browse_file' and changed_input.value:
+        path = _open_file_dialog()
+        if path:
+            inputs.itemById('piping_register_path').value = path
+            name_input = inputs.itemById('piping_register_name')
+            if name_input and not name_input.value.strip():
+                name_input.value = Path(path).stem
+        changed_input.value = False
+
 def command_destroy(args: adsk.core.CommandEventArgs):
     global local_handlers
     local_handlers = []
@@ -728,6 +896,21 @@ def refresh_section_model_list(model_input: adsk.core.DropDownCommandInput, cate
     global SECTION_STEEL_MODELS
     SECTION_STEEL_MODELS = load_section_models()
     cat_entry = SECTION_STEEL_MODELS.get(category, {"models": {}})
+    models = cat_entry.get('models', {})
+    if models:
+        for name in sorted(models.keys()):
+            model_input.listItems.add(name, False)
+        model_input.listItems.item(0).isSelected = True
+        model_input.isEnabled = True
+    else:
+        model_input.listItems.add('モデルが登録されていません', True)
+        model_input.isEnabled = False
+
+def refresh_piping_model_list(model_input: adsk.core.DropDownCommandInput, category: str):
+    model_input.listItems.clear()
+    global PIPING_FITTINGS_MODELS
+    PIPING_FITTINGS_MODELS = load_piping_fittings_models()
+    cat_entry = PIPING_FITTINGS_MODELS.get(category, {"models": {}})
     models = cat_entry.get('models', {})
     if models:
         for name in sorted(models.keys()):
@@ -868,6 +1051,44 @@ def register_section_model_to_json(category: str, model_name: str, model_path: s
         ui.messageBox(f'形鋼モデル登録に失敗しました: {e}')
         futil.log(f'形鋼登録エラー: {e}')
 
+def register_piping_model_to_json(category: str, model_name: str, model_path: str, description: str = ''):
+    try:
+        base_dir = Path(__file__).parent
+        cfg = base_dir / 'piping_fittings_models.json'
+        models_root = base_dir / 'models' / 'piping_fittings' / category
+        models_root.mkdir(parents=True, exist_ok=True)
+
+        src_path = Path(model_path)
+        if not src_path.exists():
+            ui.messageBox(f'ソースファイルが見つかりません:\n{model_path}')
+            return
+
+        local_file_name = src_path.name
+        local_file_path = models_root / local_file_name
+        shutil.copy2(str(src_path), str(local_file_path))
+        futil.log(f'配管接手モデルをコピー: {src_path} -> {local_file_path}')
+
+        relative_path = str(local_file_path.relative_to(base_dir)).replace('\\', '/')
+
+        models = load_piping_fittings_models()
+        if category not in models:
+            models[category] = {"models": {}}
+        models[category].setdefault('models', {})
+        models[category]['models'][model_name] = {
+            'path': relative_path,
+            'description': description or 'ユーザー登録モデル'
+        }
+
+        with open(cfg, 'w', encoding='utf-8') as f:
+            json.dump(models, f, ensure_ascii=False, indent=2)
+
+        global PIPING_FITTINGS_MODELS
+        PIPING_FITTINGS_MODELS = models
+        futil.log(f'配管接手モデル登録完了: [{category}] {model_name}')
+    except Exception as e:
+        ui.messageBox(f'配管接手モデル登録に失敗しました: {e}')
+        futil.log(f'配管接手登録エラー: {e}')
+
 # ============================================================================
 # ファイルダイアログ
 # ============================================================================
@@ -907,16 +1128,18 @@ def create_splice_plate(plate_type: str, thickness: float, hole_diameter: float,
     """スプライスプレートを作成"""
     try:
         design = adsk.fusion.Design.cast(app.activeProduct)
-        root_comp = design.rootComponent
+        target_comp = futil.get_target_component(design)
         
         base_pt = placement_point or adsk.core.Point3D.create(0, 0, 0)
         matrix = adsk.core.Matrix3D.create()
         matrix.translation = adsk.core.Vector3D.create(base_pt.x, base_pt.y, base_pt.z)
 
-        occurrence = root_comp.occurrences.addNewComponent(matrix)
+        occurrence = target_comp.occurrences.addNewComponent(matrix)
         component = occurrence.component
         clean_plate = plate_type.replace('用', ' ').replace('_', ' ')
         comp_name = f'SPL {clean_plate}'
+        # 括弧付き数字を削除し、最後の数字の前にスペースを挿入
+        comp_name = futil.format_component_name(comp_name)
         component.name = comp_name
         
         plate_data = SPLICE_PLATE_TYPES.get(plate_type)
@@ -1143,6 +1366,39 @@ def place_section_model(category: str, model_name: str, placement_point: adsk.co
         ui.messageBox(f'エラーが発生しました: {e}')
         futil.log(f'エラー: {e}')
 
+def place_piping_model(category: str, model_name: str, placement_point: adsk.core.Point3D):
+    """登録された配管接手モデルを配置"""
+    try:
+        design = adsk.fusion.Design.cast(app.activeProduct)
+        if not design:
+            ui.messageBox('アクティブなデザインがありません')
+            return
+
+        cat_entry = PIPING_FITTINGS_MODELS.get(category, {"models": {}})
+        model_info = cat_entry.get('models', {}).get(model_name)
+        if not model_info:
+            ui.messageBox(f'モデル {model_name} が見つかりません')
+            return
+
+        model_path = model_info.get('path')
+        if not model_path:
+            ui.messageBox(f'モデル {model_name} のパスが設定されていません')
+            return
+
+        model_path_obj = Path(model_path)
+        if not model_path_obj.is_absolute():
+            base_dir = Path(__file__).parent
+            model_path_obj = base_dir / model_path_obj
+        if not model_path_obj.exists():
+            ui.messageBox(f'モデルファイルが見つかりません:\n{model_path_obj}')
+            return
+
+        # モデルを配置
+        _place_model_impl(design, model_name, model_path_obj, placement_point, modify_extrude_height=False)
+        ui.messageBox(f'配管接手モデル"{model_name}"を配置しました')
+    except Exception as e:
+        ui.messageBox(f'エラーが発生しました: {e}')
+        futil.log(f'エラー: {e}')
 
 
 def _try_update_extrude_height(component: adsk.fusion.Component, target_h_cm: float) -> bool:
@@ -1304,7 +1560,12 @@ def _place_model_impl(design: adsk.fusion.Design, model_name: str, model_path_ob
     default_matrix = adsk.core.Matrix3D.create()
     default_matrix.translation = adsk.core.Vector3D.create(base_pt.x, base_pt.y, base_pt.z)
 
-    occs = design.rootComponent.occurrences
+    target_comp = futil.get_target_component(design)
+    futil.log(f'ターゲットコンポーネント: {target_comp.name if target_comp else "None"}', force_console=True)
+    futil.log(f'ルートコンポーネント: {design.rootComponent.name}', force_console=True)
+    futil.log(f'アクティブコンポーネント: {design.activeComponent.name if design.activeComponent else "None"}', force_console=True)
+    
+    occs = target_comp.occurrences
     before_count = occs.count
     futil.log(f'インポート前: コンポーネント数={before_count}', force_console=True)
     
@@ -1320,7 +1581,7 @@ def _place_model_impl(design: adsk.fusion.Design, model_name: str, model_path_ob
     else:
         opts = import_manager.createImportOptions(str(model_path_obj))
 
-    import_manager.importToTarget(opts, design.rootComponent)
+    import_manager.importToTarget(opts, target_comp)
     after_count = occs.count
     futil.log(f'インポート後: コンポーネント数={after_count}, 差分={after_count - before_count}', force_console=True)
     
