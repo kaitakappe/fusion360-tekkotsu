@@ -112,10 +112,6 @@
       "H-300×300×10×15": {
         "path": "models/sections/H形鋼/H-300×300×10×15.f3d",
         "description": "ユーザー登録モデル"
-      },
-      "C-250×90×9×13": {
-        "path": "models/sections/H形鋼/C-250×90×9×13.f3d",
-        "description": "ユーザー登録モデル"
       }
     }
   },
