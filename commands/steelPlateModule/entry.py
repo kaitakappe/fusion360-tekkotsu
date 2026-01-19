@@ -62,6 +62,11 @@ SECTION_STEEL_CATEGORIES = [
     'リップ溝形鋼', 'リップZ形鋼', 'Cチャンネル'
 ]
 
+# 軽量用形鋼カテゴリ
+LIGHT_SECTION_CATEGORIES = [
+    '軽溝形鋼', '軽Z形鋼', '軽山形鋼', '軽H形鋼', '軽リップH形鋼'
+]
+
 def load_section_models():
     models = {}
     cfg = Path(__file__).parent / 'section_steel_models.json'
@@ -78,6 +83,22 @@ def load_section_models():
     return models
 
 SECTION_STEEL_MODELS = load_section_models()
+
+def load_light_section_models():
+    models = {}
+    cfg = Path(__file__).parent / 'light_section_steel_models.json'
+    if cfg.exists():
+        try:
+            with open(cfg, 'r', encoding='utf-8') as f:
+                models = json.load(f)
+        except Exception as e:
+            futil.log(f'軽量形鋼モデル設定の読み込みエラー: {e}')
+    for cat in LIGHT_SECTION_CATEGORIES:
+        if cat not in models:
+            models[cat] = {"models": {}}
+    return models
+
+LIGHT_SECTION_MODELS = load_light_section_models()
 
 # 配管接手カテゴリ
 PIPING_FITTINGS_CATEGORIES = [
@@ -264,6 +285,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     tab_gusset = inputs.addTabCommandInput('tab_gusset', 'ガセットプレート')
     tab_custom = inputs.addTabCommandInput('tab_custom', 'カスタムプレート')
     tab_section = inputs.addTabCommandInput('tab_section', '形鋼')
+    tab_light_section = inputs.addTabCommandInput('tab_light_section', '軽量用形鋼')
 
     # --- スプライスタブ ---
     splice_inputs = tab_splice.children
@@ -398,6 +420,49 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     section_place_grp.isVisible = True
     section_reg_grp.isVisible = False
 
+    # --- 軽量形鋼タブ ---
+    light_section_inputs = tab_light_section.children
+    # モード選択（配置 / 登録）
+    light_section_mode = light_section_inputs.addDropDownCommandInput('light_section_mode', 'モード', adsk.core.DropDownStyles.TextListDropDownStyle)
+    light_section_mode.listItems.add('配置', True)
+    light_section_mode.listItems.add('登録', False)
+
+    # 配置用グループ
+    light_section_place_grp = light_section_inputs.addGroupCommandInput('light_section_place_grp', '配置')
+    light_section_place_children = light_section_place_grp.children
+    light_section_cat_input = light_section_place_children.addDropDownCommandInput('light_section_category', 'カテゴリ', adsk.core.DropDownStyles.TextListDropDownStyle)
+    for cat in LIGHT_SECTION_CATEGORIES:
+        light_section_cat_input.listItems.add(cat, False)
+    light_section_cat_input.listItems.item(0).isSelected = True
+
+    light_section_model_input = light_section_place_children.addDropDownCommandInput('light_section_model', 'モデル', adsk.core.DropDownStyles.TextListDropDownStyle)
+    refresh_light_section_model_list(light_section_model_input, LIGHT_SECTION_CATEGORIES[0])
+
+    light_section_target = light_section_place_children.addSelectionInput('light_section_target_sel', '配置先', '面/点/エッジを選択')
+    light_section_target.addSelectionFilter('PlanarFaces')
+    light_section_target.addSelectionFilter('Vertices')
+    light_section_target.addSelectionFilter('Edges')
+    light_section_target.setSelectionLimits(0, 1)
+
+    light_section_place_children.addValueInput(
+        'light_section_height', '高さ', 'mm', adsk.core.ValueInput.createByReal(100.0)
+    )
+
+    # 登録用グループ
+    light_section_reg_grp = light_section_inputs.addGroupCommandInput('light_section_reg_grp', 'ファイル登録')
+    light_section_reg_children = light_section_reg_grp.children
+    light_section_reg_cat = light_section_reg_children.addDropDownCommandInput('light_section_reg_category', 'カテゴリ', adsk.core.DropDownStyles.TextListDropDownStyle)
+    for cat in LIGHT_SECTION_CATEGORIES:
+        light_section_reg_cat.listItems.add(cat, False)
+    light_section_reg_cat.listItems.item(0).isSelected = True
+    light_section_reg_children.addStringValueInput('light_section_register_name', '登録名', '')
+    light_section_reg_children.addStringValueInput('light_section_register_desc', '説明', '')
+    light_section_reg_children.addStringValueInput('light_section_register_path', 'ファイルパス', '')
+    light_section_reg_children.addBoolValueInput('light_section_browse_file', 'ファイルを選択...', False, '', False)
+
+    light_section_place_grp.isVisible = True
+    light_section_reg_grp.isVisible = False
+
     # --- 配管接手タブ ---
     tab_piping = inputs.addTabCommandInput('tab_piping', '配管接手')
     piping_inputs = tab_piping.children
@@ -472,6 +537,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
         tab_gusset = inputs.itemById('tab_gusset')
         tab_custom = inputs.itemById('tab_custom')
         tab_section = inputs.itemById('tab_section')
+        tab_light_section = inputs.itemById('tab_light_section')
 
         if tab_splice and tab_splice.isActive:
             plate_type = inputs.itemById('splice_plate_type').selectedItem.name
@@ -670,6 +736,86 @@ def command_execute(args: adsk.core.CommandEventArgs):
                 if current_cat == reg_cat:
                     refresh_section_model_list(inputs.itemById('section_model'), current_cat)
 
+        elif tab_light_section and tab_light_section.isActive:
+            mode_input = inputs.itemById('light_section_mode')
+            if mode_input.selectedItem and mode_input.selectedItem.name == '配置':
+                cat = inputs.itemById('light_section_category').selectedItem.name
+                model_name = inputs.itemById('light_section_model').selectedItem.name
+                target_sel = inputs.itemById('light_section_target_sel')
+                placement_point = adsk.core.Point3D.create(0, 0, 0)
+                selection_entity = None
+                if target_sel and target_sel.selectionCount > 0:
+                    try:
+                        placement_point = target_sel.selection(0).point
+                        selection_entity = target_sel.selection(0).entity
+                    except Exception:
+                        placement_point = adsk.core.Point3D.create(0, 0, 0)
+                height_in_mm = None
+                h_input = inputs.itemById('light_section_height')
+                if h_input:
+                    try:
+                        height_in_mm = h_input.value * 10.0
+                    except Exception:
+                        height_in_mm = 1000.0
+                place_light_section_model(cat, model_name, placement_point, selection_entity=selection_entity, target_height_mm=height_in_mm or 1000.0)
+            else:
+                reg_cat = inputs.itemById('light_section_reg_category').selectedItem.name
+                reg_name = inputs.itemById('light_section_register_name').value.strip()
+                reg_desc = inputs.itemById('light_section_register_desc').value.strip()
+                reg_path = inputs.itemById('light_section_register_path').value.strip()
+
+                if reg_path and not reg_name:
+                    reg_name = Path(reg_path).stem
+                    inputs.itemById('light_section_register_name').value = reg_name
+
+                if not reg_path:
+                    sel = _open_file_dialog(multi=True)
+                    if not sel:
+                        return
+
+                    if isinstance(sel, list) and len(sel) > 1:
+                        registered = []
+                        for p in sel:
+                            if not Path(p).exists():
+                                futil.log(f'ファイルが見つかりません: {p}', force_console=True)
+                                continue
+                            name = Path(p).stem
+                            register_light_section_model_to_json(reg_cat, name, p, reg_desc or '軽量形鋼モデル')
+                            registered.append(name)
+
+                        if registered:
+                            ui.messageBox(f'軽量形鋼モデルを登録しました: {", ".join(registered)}')
+                            current_cat = inputs.itemById('light_section_category').selectedItem.name
+                            if current_cat == reg_cat:
+                                refresh_light_section_model_list(inputs.itemById('light_section_model'), current_cat)
+                        else:
+                            ui.messageBox('有効なファイルが見つからず、登録は行われませんでした。')
+
+                        inputs.itemById('light_section_register_name').value = ''
+                        inputs.itemById('light_section_register_path').value = ''
+                        return
+                    else:
+                        reg_path = sel[0] if isinstance(sel, list) else sel
+                        if not reg_path:
+                            return
+                        inputs.itemById('light_section_register_path').value = reg_path
+                        if not reg_name:
+                            reg_name = Path(reg_path).stem
+                            inputs.itemById('light_section_register_name').value = reg_name
+
+                if not reg_name:
+                    ui.messageBox('登録名を入力してください')
+                    return
+                if not Path(reg_path).exists():
+                    ui.messageBox(f'指定のファイルが見つかりません:\n{reg_path}')
+                    return
+
+                register_light_section_model_to_json(reg_cat, reg_name, reg_path, reg_desc or 'ユーザー登録モデル')
+                ui.messageBox(f'軽量形鋼モデル"{reg_name}"を登録しました')
+                current_cat = inputs.itemById('light_section_category').selectedItem.name
+                if current_cat == reg_cat:
+                    refresh_light_section_model_list(inputs.itemById('light_section_model'), current_cat)
+
         tab_piping = inputs.itemById('tab_piping')
         if tab_piping and tab_piping.isActive:
             mode_input = inputs.itemById('piping_mode')
@@ -833,6 +979,30 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
                 name_input.value = Path(path).stem
         changed_input.value = False
 
+    # 軽量形鋼: モード切替で表示制御
+    if changed_input.id == 'light_section_mode':
+        selected = changed_input.selectedItem.name if changed_input.selectedItem else '配置'
+        place_grp = inputs.itemById('light_section_place_grp')
+        reg_grp = inputs.itemById('light_section_reg_grp')
+        if place_grp: place_grp.isVisible = (selected == '配置')
+        if reg_grp: reg_grp.isVisible = (selected == '登録')
+
+    # 軽量形鋼: カテゴリ変更でモデル一覧を更新
+    if changed_input.id == 'light_section_category':
+        cat = changed_input.selectedItem.name
+        model_input = inputs.itemById('light_section_model')
+        refresh_light_section_model_list(model_input, cat)
+
+    # 軽量形鋼: 登録のファイル参照ボタン
+    if changed_input.id == 'light_section_browse_file' and changed_input.value:
+        path = _open_file_dialog()
+        if path:
+            inputs.itemById('light_section_register_path').value = path
+            name_input = inputs.itemById('light_section_register_name')
+            if name_input and not name_input.value.strip():
+                name_input.value = Path(path).stem
+        changed_input.value = False
+
     # 配管接手: モード切替で表示制御
     if changed_input.id == 'piping_mode':
         selected = changed_input.selectedItem.name if changed_input.selectedItem else '配置'
@@ -896,6 +1066,21 @@ def refresh_section_model_list(model_input: adsk.core.DropDownCommandInput, cate
     global SECTION_STEEL_MODELS
     SECTION_STEEL_MODELS = load_section_models()
     cat_entry = SECTION_STEEL_MODELS.get(category, {"models": {}})
+    models = cat_entry.get('models', {})
+    if models:
+        for name in sorted(models.keys()):
+            model_input.listItems.add(name, False)
+        model_input.listItems.item(0).isSelected = True
+        model_input.isEnabled = True
+    else:
+        model_input.listItems.add('モデルが登録されていません', True)
+        model_input.isEnabled = False
+
+def refresh_light_section_model_list(model_input: adsk.core.DropDownCommandInput, category: str):
+    model_input.listItems.clear()
+    global LIGHT_SECTION_MODELS
+    LIGHT_SECTION_MODELS = load_light_section_models()
+    cat_entry = LIGHT_SECTION_MODELS.get(category, {"models": {}})
     models = cat_entry.get('models', {})
     if models:
         for name in sorted(models.keys()):
@@ -1050,6 +1235,44 @@ def register_section_model_to_json(category: str, model_name: str, model_path: s
     except Exception as e:
         ui.messageBox(f'形鋼モデル登録に失敗しました: {e}')
         futil.log(f'形鋼登録エラー: {e}')
+
+def register_light_section_model_to_json(category: str, model_name: str, model_path: str, description: str = ''):
+    try:
+        base_dir = Path(__file__).parent
+        cfg = base_dir / 'light_section_steel_models.json'
+        models_root = base_dir / 'models' / 'light_sections' / category
+        models_root.mkdir(parents=True, exist_ok=True)
+
+        src_path = Path(model_path)
+        if not src_path.exists():
+            ui.messageBox(f'ソースファイルが見つかりません:\n{model_path}')
+            return
+
+        local_file_name = src_path.name
+        local_file_path = models_root / local_file_name
+        shutil.copy2(str(src_path), str(local_file_path))
+        futil.log(f'軽量形鋼モデルをコピー: {src_path} -> {local_file_path}')
+
+        relative_path = str(local_file_path.relative_to(base_dir)).replace('\\', '/')
+
+        models = load_light_section_models()
+        if category not in models:
+            models[category] = {"models": {}}
+        models[category].setdefault('models', {})
+        models[category]['models'][model_name] = {
+            'path': relative_path,
+            'description': description or 'ユーザー登録モデル'
+        }
+
+        with open(cfg, 'w', encoding='utf-8') as f:
+            json.dump(models, f, ensure_ascii=False, indent=2)
+
+        global LIGHT_SECTION_MODELS
+        LIGHT_SECTION_MODELS = models
+        futil.log(f'軽量形鋼モデル登録完了: [{category}] {model_name}')
+    except Exception as e:
+        ui.messageBox(f'軽量形鋼モデル登録に失敗しました: {e}')
+        futil.log(f'軽量形鋼登録エラー: {e}')
 
 def register_piping_model_to_json(category: str, model_name: str, model_path: str, description: str = ''):
     try:
@@ -1362,6 +1585,95 @@ def place_section_model(category: str, model_name: str, placement_point: adsk.co
             _apply_transform_scale(occ, target_h_cm)
 
         ui.messageBox(f'形鋼モデル"{model_name}"を配置しました')
+    except Exception as e:
+        ui.messageBox(f'エラーが発生しました: {e}')
+        futil.log(f'エラー: {e}')
+
+def place_light_section_model(category: str, model_name: str, placement_point: adsk.core.Point3D, selection_entity=None, target_height_mm: float = 1000.0):
+    """登録された軽量形鋼モデルを配置。選択面に整列し、指定高さ(mm)にスケール。"""
+    try:
+        design = adsk.fusion.Design.cast(app.activeProduct)
+        if not design:
+            ui.messageBox('アクティブなデザインがありません')
+            return
+
+        cat_entry = LIGHT_SECTION_MODELS.get(category, {"models": {}})
+        model_info = cat_entry.get('models', {}).get(model_name)
+        if not model_info:
+            ui.messageBox(f'モデル {model_name} が見つかりません')
+            return
+
+        model_path = model_info.get('path')
+        if not model_path:
+            ui.messageBox(f'モデル {model_name} のパスが設定されていません')
+            return
+
+        model_path_obj = Path(model_path)
+        if not model_path_obj.is_absolute():
+            base_dir = Path(__file__).parent
+            model_path_obj = base_dir / model_path_obj
+        if not model_path_obj.exists():
+            ui.messageBox(f'モデルファイルが見つかりません:\n{model_path_obj}')
+            return
+
+        x_axis = adsk.core.Vector3D.create(1, 0, 0)
+        y_axis = adsk.core.Vector3D.create(0, 1, 0)
+        z_axis = adsk.core.Vector3D.create(0, 0, 1)
+        origin = placement_point or adsk.core.Point3D.create(0, 0, 0)
+        matrix = adsk.core.Matrix3D.create()
+        align_applied = False
+        try:
+            if selection_entity and hasattr(selection_entity, 'geometry'):
+                geom = selection_entity.geometry
+                if hasattr(geom, 'normal') and hasattr(geom, 'origin'):
+                    n = geom.normal
+                    n.normalize()
+                    up = adsk.core.Vector3D.create(0, 0, 1)
+                    if abs(n.dotProduct(up)) > 0.95:
+                        up = adsk.core.Vector3D.create(1, 0, 0)
+                    x_axis = up.crossProduct(n)
+                    x_axis.normalize()
+                    y_axis = n.crossProduct(x_axis)
+                    y_axis.normalize()
+                    z_axis = n
+                    origin = placement_point or geom.origin
+                    matrix.setWithCoordinateSystem(origin, x_axis, y_axis, z_axis)
+                    align_applied = True
+        except Exception as _:
+            align_applied = False
+
+        target_h_cm = max(0.01, float(target_height_mm) / 10.0)
+
+        occ = _place_model_impl(design, model_name, model_path_obj, origin, transform=(matrix if align_applied else None))
+        if not occ:
+            return
+
+        try:
+            cur = occ.transform
+            new_m = adsk.core.Matrix3D.create()
+            for r in range(3):
+                for c in range(3):
+                    new_m.setCell(r, c, cur.getCell(r, c))
+            if placement_point:
+                new_m.setCell(0, 3, placement_point.x)
+                new_m.setCell(1, 3, placement_point.y)
+                new_m.setCell(2, 3, placement_point.z)
+            new_m.setCell(3, 0, 0)
+            new_m.setCell(3, 1, 0)
+            new_m.setCell(3, 2, 0)
+            new_m.setCell(3, 3, 1)
+            occ.transform = new_m
+        except Exception as e:
+            futil.log(f'コンポーネント原点移動エラー: {e}')
+
+        futil.log(f'押し出し高さ変更: target_h_cm={target_h_cm} (from target_height_mm={target_height_mm})', force_console=True)
+        extrude_updated = _try_update_extrude_height(occ.component, target_h_cm)
+
+        if not extrude_updated:
+            futil.log(f'押し出し編集失敗、スケール適用', force_console=True)
+            _apply_transform_scale(occ, target_h_cm)
+
+        ui.messageBox(f'軽量形鋼モデル"{model_name}"を配置しました')
     except Exception as e:
         ui.messageBox(f'エラーが発生しました: {e}')
         futil.log(f'エラー: {e}')

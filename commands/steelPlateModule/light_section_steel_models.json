@@ -1,0 +1,30 @@
+{
+  "軽溝形鋼": {
+    "models": {}
+  },
+  "軽Z形鋼": {
+    "models": {}
+  },
+  "軽山形鋼": {
+    "models": {}
+  },
+  "軽H形鋼": {
+    "models": {
+      "軽H-200×125×3.2×6.0": {
+        "path": "models/light_sections/軽H形鋼/軽H-200×125×3.2×6.0.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "軽H-200×100×2.3×4.5": {
+        "path": "models/light_sections/軽H形鋼/軽H-200×100×2.3×4.5.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "軽H-175×90×3.2×4.5": {
+        "path": "models/light_sections/軽H形鋼/軽H-175×90×3.2×4.5.f3d",
+        "description": "ユーザー登録モデル"
+      }
+    }
+  },
+  "軽リップH形鋼": {
+    "models": {}
+  }
+}

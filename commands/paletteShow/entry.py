@@ -118,7 +118,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
             isVisible=True,
             showCloseButton=True,
             isResizable=True,
-            width=650,
+            width=800,
             height=600,
             useNewWebBrowser=True
         )
