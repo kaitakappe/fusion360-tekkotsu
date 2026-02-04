@@ -231,12 +231,29 @@
     "models": {}
   },
   "角型鋼(正方形)": {
-    "models": {}
+    "models": {
+      "▢-200×200×8.0": {
+        "path": "models/sections/角型鋼(正方形)/▢-200×200×8.0.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "▢-60×60×3.2": {
+        "path": "models/sections/角型鋼(正方形)/▢-60×60×3.2.f3d",
+        "description": "ユーザー登録モデル"
+      }
+    }
   },
   "角型鋼(長方形)": {
     "models": {
       "▢-150×100×4.5": {
         "path": "models/sections/角型鋼(長方形)/▢-150×100×4.5.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "▢-200×150×9.0": {
+        "path": "models/sections/角型鋼(長方形)/▢-200×150×9.0.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "▢-75X45X3.2": {
+        "path": "models/sections/角型鋼(長方形)/▢-75X45X3.2.f3d",
         "description": "ユーザー登録モデル"
       }
     }
@@ -249,6 +266,10 @@
       "RC-150×75×25×4.5": {
         "path": "models/sections/リップ溝形鋼/RC-150×75×25×4.5.f3d",
         "description": "ユーザー登録モデル"
+      },
+      "RC-100×50×20×4.5": {
+        "path": "models/sections/リップ溝形鋼/RC-100×50×20×4.5.f3d",
+        "description": "ユーザー登録モデル"
       }
     }
   },
@@ -256,6 +277,25 @@
     "models": {}
   },
   "Cチャンネル": {
+    "models": {}
+  },
+  "一般構造用炭素鋼管(STK)": {
+    "models": {
+      "Φ457.2×12.7": {
+        "path": "models/sections/一般構造用炭素鋼管(STK)/Φ457.2×12.7.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "Φ267.4×6.6": {
+        "path": "models/sections/一般構造用炭素鋼管(STK)/Φ267.4×6.6.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "Φ267.4×9.3": {
+        "path": "models/sections/一般構造用炭素鋼管(STK)/Φ267.4×9.3.f3d",
+        "description": "ユーザー登録モデル"
+      }
+    }
+  },
+  "建築構造用炭素鋼管(STKN)": {
     "models": {}
   }
 }

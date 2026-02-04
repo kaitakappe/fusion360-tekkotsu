@@ -21,6 +21,10 @@
       "軽H-175×90×3.2×4.5": {
         "path": "models/light_sections/軽H形鋼/軽H-175×90×3.2×4.5.f3d",
         "description": "ユーザー登録モデル"
+      },
+      "軽H-200×100×3.2×6.0": {
+        "path": "models/light_sections/軽H形鋼/軽H-200×100×3.2×6.0.f3d",
+        "description": "ユーザー登録モデル"
       }
     }
   },
