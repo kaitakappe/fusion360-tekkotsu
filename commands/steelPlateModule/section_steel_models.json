@@ -255,6 +255,26 @@
       "▢-75X45X3.2": {
         "path": "models/sections/角型鋼(長方形)/▢-75X45X3.2.f3d",
         "description": "ユーザー登録モデル"
+      },
+      "▢-125×75×2.3": {
+        "path": "models/sections/角型鋼(長方形)/▢-125×75×2.3.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "▢-125×75×3.2": {
+        "path": "models/sections/角型鋼(長方形)/▢-125×75×3.2.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "▢-125×75×4.0": {
+        "path": "models/sections/角型鋼(長方形)/▢-125×75×4.0.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "▢-125×75×4.5": {
+        "path": "models/sections/角型鋼(長方形)/▢-125×75×4.5.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "▢-125×75×6.0": {
+        "path": "models/sections/角型鋼(長方形)/▢-125×75×6.0.f3d",
+        "description": "ユーザー登録モデル"
       }
     }
   },
@@ -292,10 +312,26 @@
       "Φ267.4×9.3": {
         "path": "models/sections/一般構造用炭素鋼管(STK)/Φ267.4×9.3.f3d",
         "description": "ユーザー登録モデル"
+      },
+      "Φ406.7×12.7": {
+        "path": "models/sections/一般構造用炭素鋼管(STK)/Φ406.7×12.7.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "Φ318.5×10.3": {
+        "path": "models/sections/一般構造用炭素鋼管(STK)/Φ318.5×10.3.f3d",
+        "description": "ユーザー登録モデル"
       }
     }
   },
   "建築構造用炭素鋼管(STKN)": {
     "models": {}
+  },
+  "平鋼": {
+    "models": {
+      "FB-6t×50": {
+        "path": "models/sections/平鋼/FB-6t×50.f3d",
+        "description": "ユーザー登録モデル"
+      }
+    }
   }
 }
