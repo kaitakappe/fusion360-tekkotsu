@@ -58,15 +58,73 @@ GUSSET_PLATE_MODELS = load_gusset_models()
 # 形鋼カテゴリ
 SECTION_STEEL_CATEGORIES = [
     'H形鋼', '溝形鋼', 'Lアングル', 'Lアングル(不等辺)',
-    '角型鋼(正方形)', '角型鋼(長方形)', 'ハット形鋼',
-    'リップ溝形鋼', 'リップZ形鋼', 'Cチャンネル', '平鋼',
+    '角型鋼(正方形)', '角型鋼(長方形)', '平鋼',
     '一般構造用炭素鋼管(STK)', '建築構造用炭素鋼管(STKN)'
 ]
 
 # 軽量用形鋼カテゴリ
 LIGHT_SECTION_CATEGORIES = [
-    '軽溝形鋼', '軽Z形鋼', '軽山形鋼', '軽H形鋼', '軽リップH形鋼'
+    '軽溝形鋼', '軽Z形鋼', '軽山形鋼', '軽H形鋼', '軽リップH形鋼',
+    'ハット形鋼', 'リップ溝形鋼', 'リップZ形鋼'
 ]
+
+MOVED_TO_LIGHT_SECTION_CATEGORIES = ['ハット形鋼', 'リップ溝形鋼', 'リップZ形鋼']
+
+def migrate_section_categories_to_light_section_models():
+    """旧「形鋼」側にある移動対象カテゴリを「軽量用形鋼」側へ移管する。"""
+    base_dir = Path(__file__).parent
+    section_cfg = base_dir / 'section_steel_models.json'
+    light_cfg = base_dir / 'light_section_steel_models.json'
+
+    if not section_cfg.exists():
+        return
+
+    try:
+        with open(section_cfg, 'r', encoding='utf-8') as f:
+            section_models = json.load(f)
+    except Exception as e:
+        futil.log(f'形鋼モデル移管元の読み込みエラー: {e}')
+        return
+
+    light_models = {}
+    if light_cfg.exists():
+        try:
+            with open(light_cfg, 'r', encoding='utf-8') as f:
+                light_models = json.load(f)
+        except Exception as e:
+            futil.log(f'軽量形鋼モデル移管先の読み込みエラー: {e}')
+            return
+
+    section_changed = False
+    light_changed = False
+
+    for cat in MOVED_TO_LIGHT_SECTION_CATEGORIES:
+        src_entry = section_models.get(cat)
+        if src_entry is None:
+            continue
+
+        src_models = src_entry.get('models', {}) if isinstance(src_entry, dict) else {}
+        dst_entry = light_models.setdefault(cat, {'models': {}})
+        dst_models = dst_entry.setdefault('models', {})
+
+        for model_name, model_data in src_models.items():
+            if model_name not in dst_models:
+                dst_models[model_name] = model_data
+                light_changed = True
+
+        section_models.pop(cat, None)
+        section_changed = True
+
+    if section_changed:
+        with open(section_cfg, 'w', encoding='utf-8') as f:
+            json.dump(section_models, f, ensure_ascii=False, indent=2)
+
+    if light_changed:
+        with open(light_cfg, 'w', encoding='utf-8') as f:
+            json.dump(light_models, f, ensure_ascii=False, indent=2)
+
+
+migrate_section_categories_to_light_section_models()
 
 def load_section_models():
     models = {}

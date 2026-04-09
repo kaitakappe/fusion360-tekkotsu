@@ -1,6 +1,11 @@
 {
   "軽溝形鋼": {
-    "models": {}
+    "models": {
+      "C-200×50×50×4.5": {
+        "path": "models/light_sections/軽溝形鋼/LC-200X50X50X4.5.f3d",
+        "description": "ユーザー登録モデル"
+      }
+    }
   },
   "軽Z形鋼": {
     "models": {}
@@ -29,6 +34,24 @@
     }
   },
   "軽リップH形鋼": {
+    "models": {}
+  },
+  "ハット形鋼": {
+    "models": {}
+  },
+  "リップ溝形鋼": {
+    "models": {
+      "RC-150×75×25×4.5": {
+        "path": "models/sections/リップ溝形鋼/RC-150×75×25×4.5.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "RC-100×50×20×4.5": {
+        "path": "models/sections/リップ溝形鋼/RC-100×50×20×4.5.f3d",
+        "description": "ユーザー登録モデル"
+      }
+    }
+  },
+  "リップZ形鋼": {
     "models": {}
   }
 }

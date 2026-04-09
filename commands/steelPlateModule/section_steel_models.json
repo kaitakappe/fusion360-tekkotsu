@@ -224,6 +224,10 @@
       "L-65×65×6": {
         "path": "models/sections/Lアングル/L-65×65×6.f3d",
         "description": "ユーザー登録モデル"
+      },
+      "L-75×75×6": {
+        "path": "models/sections/Lアングル/L-75×75×6.f3d",
+        "description": "ユーザー登録モデル"
       }
     }
   },
@@ -238,6 +242,10 @@
       },
       "▢-60×60×3.2": {
         "path": "models/sections/角型鋼(正方形)/▢-60×60×3.2.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "▢-150×150×4.5": {
+        "path": "models/sections/角型鋼(正方形)/▢-150×150×4.5.f3d",
         "description": "ユーザー登録モデル"
       }
     }
@@ -278,27 +286,6 @@
       }
     }
   },
-  "ハット形鋼": {
-    "models": {}
-  },
-  "リップ溝形鋼": {
-    "models": {
-      "RC-150×75×25×4.5": {
-        "path": "models/sections/リップ溝形鋼/RC-150×75×25×4.5.f3d",
-        "description": "ユーザー登録モデル"
-      },
-      "RC-100×50×20×4.5": {
-        "path": "models/sections/リップ溝形鋼/RC-100×50×20×4.5.f3d",
-        "description": "ユーザー登録モデル"
-      }
-    }
-  },
-  "リップZ形鋼": {
-    "models": {}
-  },
-  "Cチャンネル": {
-    "models": {}
-  },
   "一般構造用炭素鋼管(STK)": {
     "models": {
       "Φ457.2×12.7": {
@@ -319,6 +306,22 @@
       },
       "Φ318.5×10.3": {
         "path": "models/sections/一般構造用炭素鋼管(STK)/Φ318.5×10.3.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "Φ355.6×7.9": {
+        "path": "models/sections/一般構造用炭素鋼管(STK)/Φ355.6×7.9.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "Φ216.3×5.8": {
+        "path": "models/sections/一般構造用炭素鋼管(STK)/Φ216.3×5.8.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "Φ406.4×7.9": {
+        "path": "models/sections/一般構造用炭素鋼管(STK)/Φ406.4×7.9.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "Φ216.3×8.2": {
+        "path": "models/sections/一般構造用炭素鋼管(STK)/Φ216.3×8.2.f3d",
         "description": "ユーザー登録モデル"
       }
     }
