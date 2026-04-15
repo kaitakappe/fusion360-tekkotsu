@@ -48,6 +48,10 @@
       "RC-100×50×20×4.5": {
         "path": "models/sections/リップ溝形鋼/RC-100×50×20×4.5.f3d",
         "description": "ユーザー登録モデル"
+      },
+      "RC-150×50×20×4.5": {
+        "path": "models/light_sections/リップ溝形鋼/RC-150×50×20×4.5.f3d",
+        "description": "ユーザー登録モデル"
       }
     }
   },

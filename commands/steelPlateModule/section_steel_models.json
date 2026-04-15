@@ -1,14 +1,6 @@
 {
   "H形鋼": {
     "models": {
-      "H-100×50×5×7": {
-        "path": "models/sections/H形鋼/H-100×50×5×7.f3d",
-        "description": "ユーザー登録モデル"
-      },
-      "H-100×100×6×8": {
-        "path": "models/sections/H形鋼/H-100×100×6×8.f3d",
-        "description": "ユーザー登録モデル"
-      },
       "H-125×60×6×8": {
         "path": "models/sections/H形鋼/H-125×60×6×8.f3d",
         "description": "ユーザー登録モデル"

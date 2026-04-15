@@ -25,6 +25,21 @@ COMMAND_BESIDE_ID = ''
 
 local_handlers = []
 _executing = False  # 二重実行防止フラグ
+_skip_next_execute = False  # APITabBar等のプリエンプト起因の実行を1回だけ無視
+_has_meaningful_input_change = False  # APITabBar以外の入力変更があったか
+_pending_placement = None  # ダイアログ終了後に実行する配置処理
+
+
+def _point_to_tuple(pt: adsk.core.Point3D):
+    if not pt:
+        return (0.0, 0.0, 0.0)
+    return (float(pt.x), float(pt.y), float(pt.z))
+
+
+def _tuple_to_point(data):
+    if not data:
+        return adsk.core.Point3D.create(0, 0, 0)
+    return adsk.core.Point3D.create(float(data[0]), float(data[1]), float(data[2]))
 
 # ============================================================================
 # モデル管理
@@ -335,7 +350,17 @@ def stop():
 # ============================================================================
 
 def command_created(args: adsk.core.CommandCreatedEventArgs):
+    global _skip_next_execute, _has_meaningful_input_change
+    _skip_next_execute = False
+    _has_meaningful_input_change = False
+
     futil.log(f'{CMD_NAME} コマンドが作成されました')
+    try:
+        # ワークスペース切替やUIプリエンプト時に execute が走る環境差異を抑止
+        if hasattr(args.command, 'isExecutedWhenPreEmpted'):
+            args.command.isExecutedWhenPreEmpted = False
+    except Exception as e:
+        futil.log(f'isExecutedWhenPreEmpted設定エラー: {e}', force_console=True)
     
     inputs = args.command.commandInputs
 
@@ -378,6 +403,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     gusset_mode = gusset_inputs.addDropDownCommandInput('gusset_mode', 'モード', adsk.core.DropDownStyles.TextListDropDownStyle)
     gusset_mode.listItems.add('配置', True)
     gusset_mode.listItems.add('登録', False)
+    gusset_mode.listItems.add('削除', False)
     
     # 配置用グループ
     gusset_place_grp = gusset_inputs.addGroupCommandInput('gusset_place_grp', '配置')
@@ -410,6 +436,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     custom_mode = custom_inputs.addDropDownCommandInput('custom_mode', 'モード', adsk.core.DropDownStyles.TextListDropDownStyle)
     custom_mode.listItems.add('配置', True)
     custom_mode.listItems.add('登録', False)
+    custom_mode.listItems.add('削除', False)
 
     # 配置用グループ
     custom_place_grp = custom_inputs.addGroupCommandInput('custom_place_grp', '配置')
@@ -440,6 +467,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     section_mode = section_inputs.addDropDownCommandInput('section_mode', 'モード', adsk.core.DropDownStyles.TextListDropDownStyle)
     section_mode.listItems.add('配置', True)
     section_mode.listItems.add('登録', False)
+    section_mode.listItems.add('削除', False)
 
     # 配置用グループ
     section_place_grp = section_inputs.addGroupCommandInput('section_place_grp', '配置')
@@ -485,6 +513,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     light_section_mode = light_section_inputs.addDropDownCommandInput('light_section_mode', 'モード', adsk.core.DropDownStyles.TextListDropDownStyle)
     light_section_mode.listItems.add('配置', True)
     light_section_mode.listItems.add('登録', False)
+    light_section_mode.listItems.add('削除', False)
 
     # 配置用グループ
     light_section_place_grp = light_section_inputs.addGroupCommandInput('light_section_place_grp', '配置')
@@ -529,6 +558,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     piping_mode = piping_inputs.addDropDownCommandInput('piping_mode', 'モード', adsk.core.DropDownStyles.TextListDropDownStyle)
     piping_mode.listItems.add('配置', True)
     piping_mode.listItems.add('登録', False)
+    piping_mode.listItems.add('削除', False)
 
     # 配置用グループ
     piping_place_grp = piping_inputs.addGroupCommandInput('piping_place_grp', '配置')
@@ -583,7 +613,15 @@ def set_splice_visibility(inputs: adsk.core.CommandInputs, splice_mode: str):
             inp.isVisible = (splice_mode == '登録モデル配置')
 
 def command_execute(args: adsk.core.CommandEventArgs):
-    global _executing
+    global _executing, _skip_next_execute, _has_meaningful_input_change, _pending_placement
+    if _skip_next_execute:
+        if not _has_meaningful_input_change:
+            _skip_next_execute = False
+            futil.log('command_execute: APITabBar由来の自動実行をスキップ', force_console=True)
+            return
+        # APITabBar後に実入力変更がある場合は通常実行
+        _skip_next_execute = False
+
     if _executing:
         futil.log('command_execute: 既に実行中のため無視', force_console=True)
         return
@@ -613,7 +651,8 @@ def command_execute(args: adsk.core.CommandEventArgs):
 
         elif tab_gusset and tab_gusset.isActive:
             mode_input = inputs.itemById('gusset_mode')
-            if mode_input and mode_input.selectedItem and mode_input.selectedItem.name == '配置':
+            selected_mode = mode_input.selectedItem.name if mode_input and mode_input.selectedItem else '配置'
+            if selected_mode == '配置':
                 model_name = inputs.itemById('gusset_model').selectedItem.name
                 target_sel = inputs.itemById('gusset_target_sel')
                 placement_point = adsk.core.Point3D.create(0, 0, 0)
@@ -622,7 +661,26 @@ def command_execute(args: adsk.core.CommandEventArgs):
                         placement_point = target_sel.selection(0).point
                     except Exception:
                         placement_point = adsk.core.Point3D.create(0, 0, 0)
-                place_gusset_model(model_name, placement_point)
+                _pending_placement = {
+                    'kind': 'gusset',
+                    'model_name': model_name,
+                    'point': _point_to_tuple(placement_point)
+                }
+            elif selected_mode == '削除':
+                model_input = inputs.itemById('gusset_model')
+                model_name = model_input.selectedItem.name if model_input and model_input.selectedItem else ''
+                if not model_name or '登録されていません' in model_name:
+                    ui.messageBox('削除するモデルを選択してください')
+                    return
+                if delete_gusset_model_from_json(model_name):
+                    ui.messageBox(f'モデル"{model_name}"を削除しました')
+                    refresh_gusset_model_list(inputs.itemById('gusset_model'))
+                    try:
+                        refresh_custom_model_list(inputs.itemById('custom_model'))
+                    except Exception:
+                        pass
+                else:
+                    ui.messageBox(f'モデル"{model_name}"が見つかりません')
             else:
                 # 登録処理
                 reg_name_input = inputs.itemById('gusset_register_name')
@@ -660,7 +718,8 @@ def command_execute(args: adsk.core.CommandEventArgs):
         elif tab_custom and tab_custom.isActive:
             # カスタムタブ: モードに応じて配置または登録を実行
             mode_input = inputs.itemById('custom_mode')
-            if mode_input and mode_input.selectedItem and mode_input.selectedItem.name == '配置':
+            selected_mode = mode_input.selectedItem.name if mode_input and mode_input.selectedItem else '配置'
+            if selected_mode == '配置':
                 model_input = inputs.itemById('custom_model')
                 model_name = model_input.selectedItem.name if model_input and model_input.selectedItem else None
                 target_sel = inputs.itemById('custom_target_sel')
@@ -673,7 +732,23 @@ def command_execute(args: adsk.core.CommandEventArgs):
                 if not model_name:
                     ui.messageBox('配置するモデルを選択してください')
                     return
-                place_gusset_model(model_name, placement_point)
+                _pending_placement = {
+                    'kind': 'gusset',
+                    'model_name': model_name,
+                    'point': _point_to_tuple(placement_point)
+                }
+            elif selected_mode == '削除':
+                model_input = inputs.itemById('custom_model')
+                model_name = model_input.selectedItem.name if model_input and model_input.selectedItem else ''
+                if not model_name or '登録されていません' in model_name:
+                    ui.messageBox('削除するモデルを選択してください')
+                    return
+                if delete_custom_model_from_json(model_name):
+                    ui.messageBox(f'モデル"{model_name}"を削除しました')
+                    refresh_custom_model_list(inputs.itemById('custom_model'))
+                    refresh_gusset_model_list(inputs.itemById('gusset_model'))
+                else:
+                    ui.messageBox(f'モデル"{model_name}"が見つかりません')
             else:
                 # 登録処理（既存の挙動を保持）
                 reg_name_input = inputs.itemById('custom_register_name')
@@ -711,7 +786,8 @@ def command_execute(args: adsk.core.CommandEventArgs):
 
         elif tab_section and tab_section.isActive:
             mode_input = inputs.itemById('section_mode')
-            if mode_input.selectedItem and mode_input.selectedItem.name == '配置':
+            selected_mode = mode_input.selectedItem.name if mode_input and mode_input.selectedItem else '配置'
+            if selected_mode == '配置':
                 cat = inputs.itemById('section_category').selectedItem.name
                 model_name = inputs.itemById('section_model').selectedItem.name
                 target_sel = inputs.itemById('section_target_sel')
@@ -731,7 +807,25 @@ def command_execute(args: adsk.core.CommandEventArgs):
                         height_in_mm = h_input.value * 10.0
                     except Exception:
                         height_in_mm = 1000.0
-                place_section_model(cat, model_name, placement_point, selection_entity=selection_entity, target_height_mm=height_in_mm or 1000.0)
+                _pending_placement = {
+                    'kind': 'section',
+                    'category': cat,
+                    'model_name': model_name,
+                    'point': _point_to_tuple(placement_point),
+                    'target_height_mm': float(height_in_mm or 1000.0)
+                }
+            elif selected_mode == '削除':
+                cat = inputs.itemById('section_category').selectedItem.name
+                model_input = inputs.itemById('section_model')
+                model_name = model_input.selectedItem.name if model_input and model_input.selectedItem else ''
+                if not model_name or '登録されていません' in model_name:
+                    ui.messageBox('削除するモデルを選択してください')
+                    return
+                if delete_section_model_from_json(cat, model_name):
+                    ui.messageBox(f'形鋼モデル"{model_name}"を削除しました')
+                    refresh_section_model_list(inputs.itemById('section_model'), cat)
+                else:
+                    ui.messageBox(f'形鋼モデル"{model_name}"が見つかりません')
             else:
                 reg_cat = inputs.itemById('section_reg_category').selectedItem.name
                 reg_name = inputs.itemById('section_register_name').value.strip()
@@ -797,7 +891,8 @@ def command_execute(args: adsk.core.CommandEventArgs):
 
         elif tab_light_section and tab_light_section.isActive:
             mode_input = inputs.itemById('light_section_mode')
-            if mode_input.selectedItem and mode_input.selectedItem.name == '配置':
+            selected_mode = mode_input.selectedItem.name if mode_input and mode_input.selectedItem else '配置'
+            if selected_mode == '配置':
                 cat = inputs.itemById('light_section_category').selectedItem.name
                 model_name = inputs.itemById('light_section_model').selectedItem.name
                 target_sel = inputs.itemById('light_section_target_sel')
@@ -816,7 +911,25 @@ def command_execute(args: adsk.core.CommandEventArgs):
                         height_in_mm = h_input.value * 10.0
                     except Exception:
                         height_in_mm = 1000.0
-                place_light_section_model(cat, model_name, placement_point, selection_entity=selection_entity, target_height_mm=height_in_mm or 1000.0)
+                _pending_placement = {
+                    'kind': 'light_section',
+                    'category': cat,
+                    'model_name': model_name,
+                    'point': _point_to_tuple(placement_point),
+                    'target_height_mm': float(height_in_mm or 1000.0)
+                }
+            elif selected_mode == '削除':
+                cat = inputs.itemById('light_section_category').selectedItem.name
+                model_input = inputs.itemById('light_section_model')
+                model_name = model_input.selectedItem.name if model_input and model_input.selectedItem else ''
+                if not model_name or '登録されていません' in model_name:
+                    ui.messageBox('削除するモデルを選択してください')
+                    return
+                if delete_light_section_model_from_json(cat, model_name):
+                    ui.messageBox(f'軽量形鋼モデル"{model_name}"を削除しました')
+                    refresh_light_section_model_list(inputs.itemById('light_section_model'), cat)
+                else:
+                    ui.messageBox(f'軽量形鋼モデル"{model_name}"が見つかりません')
             else:
                 reg_cat = inputs.itemById('light_section_reg_category').selectedItem.name
                 reg_name = inputs.itemById('light_section_register_name').value.strip()
@@ -878,7 +991,8 @@ def command_execute(args: adsk.core.CommandEventArgs):
         tab_piping = inputs.itemById('tab_piping')
         if tab_piping and tab_piping.isActive:
             mode_input = inputs.itemById('piping_mode')
-            if mode_input.selectedItem and mode_input.selectedItem.name == '配置':
+            selected_mode = mode_input.selectedItem.name if mode_input and mode_input.selectedItem else '配置'
+            if selected_mode == '配置':
                 cat = inputs.itemById('piping_category').selectedItem.name
                 model_name = inputs.itemById('piping_model').selectedItem.name
                 target_sel = inputs.itemById('piping_target_sel')
@@ -891,7 +1005,24 @@ def command_execute(args: adsk.core.CommandEventArgs):
                 if not model_name or '登録されていません' in model_name:
                     ui.messageBox('配置するモデルを選択してください')
                     return
-                place_piping_model(cat, model_name, placement_point)
+                _pending_placement = {
+                    'kind': 'piping',
+                    'category': cat,
+                    'model_name': model_name,
+                    'point': _point_to_tuple(placement_point)
+                }
+            elif selected_mode == '削除':
+                cat = inputs.itemById('piping_category').selectedItem.name
+                model_input = inputs.itemById('piping_model')
+                model_name = model_input.selectedItem.name if model_input and model_input.selectedItem else ''
+                if not model_name or '登録されていません' in model_name:
+                    ui.messageBox('削除するモデルを選択してください')
+                    return
+                if delete_piping_model_from_json(cat, model_name):
+                    ui.messageBox(f'配管接手モデル"{model_name}"を削除しました')
+                    refresh_piping_model_list(inputs.itemById('piping_model'), cat)
+                else:
+                    ui.messageBox(f'配管接手モデル"{model_name}"が見つかりません')
             else:
                 reg_cat = inputs.itemById('piping_reg_category').selectedItem.name
                 reg_name = inputs.itemById('piping_register_name').value.strip()
@@ -962,9 +1093,16 @@ def command_execute(args: adsk.core.CommandEventArgs):
         _executing = False
 
 def command_input_changed(args: adsk.core.InputChangedEventArgs):
+    global _skip_next_execute, _has_meaningful_input_change
     changed_input = args.input
     inputs = args.inputs
     futil.log(f'command_input_changed: {changed_input.id}', force_console=True)
+
+    if changed_input.id == 'APITabBar':
+        _skip_next_execute = True
+        return
+
+    _has_meaningful_input_change = True
     
     if changed_input.id == 'splice_plate_type':
         plate_type = changed_input.selectedItem.name
@@ -983,7 +1121,7 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
         selected = changed_input.selectedItem.name if changed_input.selectedItem else '配置'
         place_grp = inputs.itemById('custom_place_grp')
         reg_grp = inputs.itemById('custom_reg_grp')
-        if place_grp: place_grp.isVisible = (selected == '配置')
+        if place_grp: place_grp.isVisible = (selected in ('配置', '削除'))
         if reg_grp: reg_grp.isVisible = (selected == '登録')
 
     # ガセット: モード切替で表示制御
@@ -991,7 +1129,7 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
         selected = changed_input.selectedItem.name if changed_input.selectedItem else '配置'
         place_grp = inputs.itemById('gusset_place_grp')
         reg_grp = inputs.itemById('gusset_reg_grp')
-        if place_grp: place_grp.isVisible = (selected == '配置')
+        if place_grp: place_grp.isVisible = (selected in ('配置', '削除'))
         if reg_grp: reg_grp.isVisible = (selected == '登録')
 
     # ガセット: 登録のファイル参照ボタン
@@ -1019,7 +1157,7 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
         selected = changed_input.selectedItem.name if changed_input.selectedItem else '配置'
         place_grp = inputs.itemById('section_place_grp')
         reg_grp = inputs.itemById('section_reg_grp')
-        if place_grp: place_grp.isVisible = (selected == '配置')
+        if place_grp: place_grp.isVisible = (selected in ('配置', '削除'))
         if reg_grp: reg_grp.isVisible = (selected == '登録')
 
     # 形鋼: カテゴリ変更でモデル一覧を更新
@@ -1043,7 +1181,7 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
         selected = changed_input.selectedItem.name if changed_input.selectedItem else '配置'
         place_grp = inputs.itemById('light_section_place_grp')
         reg_grp = inputs.itemById('light_section_reg_grp')
-        if place_grp: place_grp.isVisible = (selected == '配置')
+        if place_grp: place_grp.isVisible = (selected in ('配置', '削除'))
         if reg_grp: reg_grp.isVisible = (selected == '登録')
 
     # 軽量形鋼: カテゴリ変更でモデル一覧を更新
@@ -1067,7 +1205,7 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
         selected = changed_input.selectedItem.name if changed_input.selectedItem else '配置'
         place_grp = inputs.itemById('piping_place_grp')
         reg_grp = inputs.itemById('piping_reg_grp')
-        if place_grp: place_grp.isVisible = (selected == '配置')
+        if place_grp: place_grp.isVisible = (selected in ('配置', '削除'))
         if reg_grp: reg_grp.isVisible = (selected == '登録')
 
     # 配管接手: カテゴリ変更でモデル一覧を更新
@@ -1087,7 +1225,43 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
         changed_input.value = False
 
 def command_destroy(args: adsk.core.CommandEventArgs):
-    global local_handlers
+    global local_handlers, _pending_placement
+
+    try:
+        if _pending_placement:
+            kind = _pending_placement.get('kind')
+            if kind == 'gusset':
+                place_gusset_model(
+                    _pending_placement.get('model_name', ''),
+                    _tuple_to_point(_pending_placement.get('point'))
+                )
+            elif kind == 'section':
+                place_section_model(
+                    _pending_placement.get('category', ''),
+                    _pending_placement.get('model_name', ''),
+                    _tuple_to_point(_pending_placement.get('point')),
+                    selection_entity=None,
+                    target_height_mm=float(_pending_placement.get('target_height_mm', 1000.0))
+                )
+            elif kind == 'light_section':
+                place_light_section_model(
+                    _pending_placement.get('category', ''),
+                    _pending_placement.get('model_name', ''),
+                    _tuple_to_point(_pending_placement.get('point')),
+                    selection_entity=None,
+                    target_height_mm=float(_pending_placement.get('target_height_mm', 1000.0))
+                )
+            elif kind == 'piping':
+                place_piping_model(
+                    _pending_placement.get('category', ''),
+                    _pending_placement.get('model_name', ''),
+                    _tuple_to_point(_pending_placement.get('point'))
+                )
+    except Exception as e:
+        futil.log(f'遅延配置エラー: {e}', force_console=True)
+    finally:
+        _pending_placement = None
+
     local_handlers = []
 
 # ============================================================================
@@ -1370,6 +1544,141 @@ def register_piping_model_to_json(category: str, model_name: str, model_path: st
     except Exception as e:
         ui.messageBox(f'配管接手モデル登録に失敗しました: {e}')
         futil.log(f'配管接手登録エラー: {e}')
+
+def _delete_local_model_file(base_dir: Path, rel_path: str):
+    """アドイン配下(models)にあるローカルコピーのみ削除する。"""
+    if not rel_path:
+        return
+    try:
+        target = (base_dir / rel_path).resolve()
+        models_root = (base_dir / 'models').resolve()
+        if models_root in target.parents and target.exists() and target.is_file():
+            target.unlink()
+            futil.log(f'ローカルモデルファイルを削除: {target}')
+    except Exception as e:
+        futil.log(f'ローカルモデルファイル削除エラー: {e}')
+
+def delete_gusset_model_from_json(model_name: str) -> bool:
+    try:
+        base_dir = Path(__file__).parent
+        cfg = base_dir / 'gusset_models.json'
+        models = load_gusset_models()
+        entry = models.pop(model_name, None)
+        if entry is None:
+            return False
+
+        with open(cfg, 'w', encoding='utf-8') as f:
+            json.dump(models, f, ensure_ascii=False, indent=2)
+
+        _delete_local_model_file(base_dir, entry.get('path', '') if isinstance(entry, dict) else '')
+
+        global GUSSET_PLATE_MODELS
+        GUSSET_PLATE_MODELS = models
+        futil.log(f'ガセットプレートモデル削除完了: {model_name}')
+        return True
+    except Exception as e:
+        ui.messageBox(f'モデル削除に失敗しました: {e}')
+        futil.log(f'削除エラー: {e}')
+        return False
+
+def delete_custom_model_from_json(model_name: str) -> bool:
+    try:
+        base_dir = Path(__file__).parent
+        cfg = base_dir / 'custom_models.json'
+        models = {}
+        if cfg.exists():
+            with open(cfg, 'r', encoding='utf-8') as f:
+                models = json.load(f)
+
+        entry = models.pop(model_name, None)
+        if entry is None:
+            return False
+
+        with open(cfg, 'w', encoding='utf-8') as f:
+            json.dump(models, f, ensure_ascii=False, indent=2)
+
+        _delete_local_model_file(base_dir, entry.get('path', '') if isinstance(entry, dict) else '')
+        futil.log(f'カスタムモデル削除完了: {model_name}')
+        return True
+    except Exception as e:
+        ui.messageBox(f'モデル削除に失敗しました: {e}')
+        futil.log(f'削除エラー: {e}')
+        return False
+
+def delete_section_model_from_json(category: str, model_name: str) -> bool:
+    try:
+        base_dir = Path(__file__).parent
+        cfg = base_dir / 'section_steel_models.json'
+        models = load_section_models()
+        cat_entry = models.get(category, {"models": {}})
+        cat_models = cat_entry.get('models', {})
+        entry = cat_models.pop(model_name, None)
+        if entry is None:
+            return False
+
+        with open(cfg, 'w', encoding='utf-8') as f:
+            json.dump(models, f, ensure_ascii=False, indent=2)
+
+        _delete_local_model_file(base_dir, entry.get('path', '') if isinstance(entry, dict) else '')
+
+        global SECTION_STEEL_MODELS
+        SECTION_STEEL_MODELS = models
+        futil.log(f'形鋼モデル削除完了: [{category}] {model_name}')
+        return True
+    except Exception as e:
+        ui.messageBox(f'形鋼モデル削除に失敗しました: {e}')
+        futil.log(f'形鋼削除エラー: {e}')
+        return False
+
+def delete_light_section_model_from_json(category: str, model_name: str) -> bool:
+    try:
+        base_dir = Path(__file__).parent
+        cfg = base_dir / 'light_section_steel_models.json'
+        models = load_light_section_models()
+        cat_entry = models.get(category, {"models": {}})
+        cat_models = cat_entry.get('models', {})
+        entry = cat_models.pop(model_name, None)
+        if entry is None:
+            return False
+
+        with open(cfg, 'w', encoding='utf-8') as f:
+            json.dump(models, f, ensure_ascii=False, indent=2)
+
+        _delete_local_model_file(base_dir, entry.get('path', '') if isinstance(entry, dict) else '')
+
+        global LIGHT_SECTION_MODELS
+        LIGHT_SECTION_MODELS = models
+        futil.log(f'軽量形鋼モデル削除完了: [{category}] {model_name}')
+        return True
+    except Exception as e:
+        ui.messageBox(f'軽量形鋼モデル削除に失敗しました: {e}')
+        futil.log(f'軽量形鋼削除エラー: {e}')
+        return False
+
+def delete_piping_model_from_json(category: str, model_name: str) -> bool:
+    try:
+        base_dir = Path(__file__).parent
+        cfg = base_dir / 'piping_fittings_models.json'
+        models = load_piping_fittings_models()
+        cat_entry = models.get(category, {"models": {}})
+        cat_models = cat_entry.get('models', {})
+        entry = cat_models.pop(model_name, None)
+        if entry is None:
+            return False
+
+        with open(cfg, 'w', encoding='utf-8') as f:
+            json.dump(models, f, ensure_ascii=False, indent=2)
+
+        _delete_local_model_file(base_dir, entry.get('path', '') if isinstance(entry, dict) else '')
+
+        global PIPING_FITTINGS_MODELS
+        PIPING_FITTINGS_MODELS = models
+        futil.log(f'配管接手モデル削除完了: [{category}] {model_name}')
+        return True
+    except Exception as e:
+        ui.messageBox(f'配管接手モデル削除に失敗しました: {e}')
+        futil.log(f'配管接手削除エラー: {e}')
+        return False
 
 # ============================================================================
 # ファイルダイアログ
@@ -1932,28 +2241,110 @@ def _place_model_impl(design: adsk.fusion.Design, model_name: str, model_path_ob
     default_matrix.translation = adsk.core.Vector3D.create(base_pt.x, base_pt.y, base_pt.z)
 
     target_comp = futil.get_target_component(design)
+    if not target_comp:
+        target_comp = design.rootComponent
     futil.log(f'ターゲットコンポーネント: {target_comp.name if target_comp else "None"}', force_console=True)
     futil.log(f'ルートコンポーネント: {design.rootComponent.name}', force_console=True)
     futil.log(f'アクティブコンポーネント: {design.activeComponent.name if design.activeComponent else "None"}', force_console=True)
-    
-    occs = target_comp.occurrences
-    before_count = occs.count
-    futil.log(f'インポート前: コンポーネント数={before_count}', force_console=True)
-    
-    import_manager = app.importManager
-    opts = None
-    ext = model_path_obj.suffix.lower()
-    if ext == '.f3d':
-        opts = import_manager.createFusionArchiveImportOptions(str(model_path_obj))
-    elif ext in ('.step', '.stp'):
-        opts = import_manager.createSTEPImportOptions(str(model_path_obj))
-    elif ext in ('.iges', '.igs'):
-        opts = import_manager.createIGESImportOptions(str(model_path_obj))
-    else:
-        opts = import_manager.createImportOptions(str(model_path_obj))
 
-    import_manager.importToTarget(opts, target_comp)
-    after_count = occs.count
+    import_manager = app.importManager
+    ext = model_path_obj.suffix.lower()
+    futil.log(f'インポート対象パス: {model_path_obj}', force_console=True)
+
+    def _is_ascii_path(p: Path) -> bool:
+        try:
+            str(p).encode('ascii')
+            return True
+        except Exception:
+            return False
+
+    def _build_temp_ascii_copy(src_path: Path) -> Path:
+        temp_root = Path(os.environ.get('TEMP', str(Path.home()))) / 'fusion360-tekkotsu-import'
+        temp_root.mkdir(parents=True, exist_ok=True)
+        safe_name = f'model_import{src_path.suffix.lower()}'
+        dst_path = temp_root / safe_name
+        # 既存ファイルを上書きし、毎回最新内容を使用
+        shutil.copy2(str(src_path), str(dst_path))
+        return dst_path
+
+    def _create_import_options(path_obj: Path = None):
+        p = path_obj if path_obj is not None else model_path_obj
+        if ext == '.f3d':
+            return import_manager.createFusionArchiveImportOptions(str(p))
+        if ext in ('.step', '.stp'):
+            return import_manager.createSTEPImportOptions(str(p))
+        if ext in ('.iges', '.igs'):
+            return import_manager.createIGESImportOptions(str(p))
+        return import_manager.createImportOptions(str(p))
+
+    def _import_to_target_compat(opts, comp):
+        """Fusion API差異吸収: importToTarget2 を優先。失敗時は importToTarget にフォールバック。"""
+        import_to_target2 = getattr(import_manager, 'importToTarget2', None)
+        if callable(import_to_target2):
+            futil.log('インポートAPI: importToTarget2', force_console=True)
+            try:
+                return import_to_target2(opts, comp)
+            except Exception as e2:
+                futil.log(f'importToTarget2失敗。importToTargetへフォールバック: {e2}', force_console=True)
+                futil.log('インポートAPI: importToTarget', force_console=True)
+                return import_manager.importToTarget(opts, comp)
+        futil.log('インポートAPI: importToTarget', force_console=True)
+        return import_manager.importToTarget(opts, comp)
+
+    root_comp = design.rootComponent
+    candidate_targets = [target_comp]
+    if root_comp and root_comp != target_comp:
+        candidate_targets.append(root_comp)
+
+    occs = None
+    before_count = 0
+    after_count = 0
+    last_import_err = None
+    used_target_comp = None
+
+    for idx, comp in enumerate(candidate_targets):
+        occs = comp.occurrences
+        before_count = occs.count
+        futil.log(f'インポート前: コンポーネント数={before_count} / target={comp.name}', force_console=True)
+        try:
+            opts = _create_import_options()
+            _import_to_target_compat(opts, comp)
+            after_count = occs.count
+            used_target_comp = comp
+            if idx > 0:
+                futil.log(f'フォールバック成功: rootComponent へのインポートで復旧しました', force_console=True)
+            break
+        except Exception as import_err:
+            last_import_err = import_err
+            futil.log(f'importToTarget失敗: target={comp.name}, error={import_err}', force_console=True)
+
+            # パス要因の失敗を回避するため、一時ASCIIパスへコピーして再試行
+            temp_copy_path = None
+            try:
+                if (not _is_ascii_path(model_path_obj)) or (len(str(model_path_obj)) >= 180):
+                    temp_copy_path = _build_temp_ascii_copy(model_path_obj)
+                    futil.log(f'ASCII一時パスで再試行: {temp_copy_path}', force_console=True)
+                    retry_opts = _create_import_options(temp_copy_path)
+                    _import_to_target_compat(retry_opts, comp)
+                    after_count = occs.count
+                    used_target_comp = comp
+                    futil.log('ASCII一時パスでのインポート成功', force_console=True)
+                    if idx > 0:
+                        futil.log(f'フォールバック成功: rootComponent へのインポートで復旧しました', force_console=True)
+                    break
+            except Exception as retry_err:
+                last_import_err = retry_err
+                futil.log(f'ASCII一時パス再試行も失敗: target={comp.name}, error={retry_err}', force_console=True)
+            finally:
+                # 次回トラブル時に調査しやすいよう、一時ファイルは残しておく
+                # （必要なら手動で %TEMP%/fusion360-tekkotsu-import を削除）
+                pass
+
+            continue
+
+    if not used_target_comp:
+        raise RuntimeError(f'モデルインポートに失敗しました: {last_import_err}')
+
     futil.log(f'インポート後: コンポーネント数={after_count}, 差分={after_count - before_count}', force_console=True)
     
     # 追加されたコンポーネントをすべてログ出力
@@ -1964,18 +2355,17 @@ def _place_model_impl(design: adsk.fusion.Design, model_name: str, model_path_ob
             futil.log(f'  [{i}]: {comp.component.name if comp.component else "N/A"}', force_console=True)
     
     if after_count > before_count:
-        # 複数追加された場合、最初のものを使用（他は削除）
+        # Fusion APIのバージョンにより、複数Occurrenceが追加されるケースがある。
+        # 追加Occurrenceを即削除すると InternalValidationError が出ることがあるため削除しない。
         added_count = after_count - before_count
         if added_count > 1:
-            futil.log(f'警告: {added_count}個のコンポーネントが追加されました。最初のものを使用し、他は削除します', force_console=True)
-            # 後から追加された順に逆順で削除（インデックスがズレないように）
-            for i in range(after_count - 1, before_count, -1):
-                comp_to_delete = occs.item(i)
-                if comp_to_delete != occs.item(before_count):  # 最初のものは削除しない
-                    futil.log(f'削除: {comp_to_delete.component.name if comp_to_delete.component else "N/A"}', force_console=True)
-                    comp_to_delete.deleteMe()
-        
-        occ = occs.item(before_count)  # 最初に追加されたコンポーネントを取得
+            futil.log(
+                f'注意: {added_count}個のコンポーネントが追加されました。最後に追加されたOccurrenceを使用します',
+                force_console=True
+            )
+
+        # 旧実装と同様、最後に追加されたOccurrenceを採用
+        occ = occs.item(after_count - 1)
         futil.log(f'使用するコンポーネント: {occ.component.name if occ.component else "N/A"}', force_console=True)
         
         # コンポーネント内の情報ログや名前クリーンアップは必要な場合のみ実施
