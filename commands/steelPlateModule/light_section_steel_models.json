@@ -2,7 +2,7 @@
   "軽溝形鋼": {
     "models": {
       "C-200×50×50×4.5": {
-        "path": "models/light_sections/軽溝形鋼/LC-200X50X50X4.5.f3d",
+        "path": "models/light_sections/軽溝形鋼/C-200×50×50×4.5.f3d",
         "description": "ユーザー登録モデル"
       }
     }

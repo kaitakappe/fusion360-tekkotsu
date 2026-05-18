@@ -614,7 +614,32 @@ def set_splice_visibility(inputs: adsk.core.CommandInputs, splice_mode: str):
 
 def command_execute(args: adsk.core.CommandEventArgs):
     global _executing, _skip_next_execute, _has_meaningful_input_change, _pending_placement
-    if _skip_next_execute:
+
+    # --- APITabBar自動実行のスキップ判定を緩和 ---
+    # もし"配置"ボタン押下時（mode_input等が"配置"）は必ず実行する
+    # それ以外は従来通りスキップ
+    force_execute = False
+    try:
+        inputs = args.command.commandInputs
+        # 軽量用形鋼タブ
+        tab_light_section = inputs.itemById('tab_light_section')
+        if tab_light_section and tab_light_section.isActive:
+            mode_input = inputs.itemById('light_section_mode')
+            selected_mode = mode_input.selectedItem.name if mode_input and mode_input.selectedItem else ''
+            if selected_mode == '配置':
+                force_execute = True
+        # 形鋼タブ
+        tab_section = inputs.itemById('tab_section')
+        if tab_section and tab_section.isActive:
+            mode_input = inputs.itemById('section_mode')
+            selected_mode = mode_input.selectedItem.name if mode_input and mode_input.selectedItem else ''
+            if selected_mode == '配置':
+                force_execute = True
+        # ガセット・カスタム・配管も同様に追加可
+    except Exception:
+        pass
+
+    if _skip_next_execute and not force_execute:
         if not _has_meaningful_input_change:
             _skip_next_execute = False
             futil.log('command_execute: APITabBar由来の自動実行をスキップ', force_console=True)
@@ -1100,9 +1125,12 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
 
     if changed_input.id == 'APITabBar':
         _skip_next_execute = True
+        futil.log('command_input_changed: APITabBarによる自動実行をスキップ設定', force_console=True)
         return
 
+    # ユーザーによる実際の入力変更時は必ずTrueにする
     _has_meaningful_input_change = True
+    futil.log('command_input_changed: ユーザー操作で_has_meaningful_input_change=True', force_console=True)
     
     if changed_input.id == 'splice_plate_type':
         plate_type = changed_input.selectedItem.name
@@ -1228,14 +1256,18 @@ def command_destroy(args: adsk.core.CommandEventArgs):
     global local_handlers, _pending_placement
 
     try:
+        futil.log(f'command_destroy called. _pending_placement={_pending_placement}', force_console=True)
         if _pending_placement:
             kind = _pending_placement.get('kind')
+            futil.log(f'pending kind: {kind}', force_console=True)
             if kind == 'gusset':
+                futil.log(f'placing gusset: {_pending_placement}', force_console=True)
                 place_gusset_model(
                     _pending_placement.get('model_name', ''),
                     _tuple_to_point(_pending_placement.get('point'))
                 )
             elif kind == 'section':
+                futil.log(f'placing section: {_pending_placement}', force_console=True)
                 place_section_model(
                     _pending_placement.get('category', ''),
                     _pending_placement.get('model_name', ''),
@@ -1244,6 +1276,7 @@ def command_destroy(args: adsk.core.CommandEventArgs):
                     target_height_mm=float(_pending_placement.get('target_height_mm', 1000.0))
                 )
             elif kind == 'light_section':
+                futil.log(f'placing light_section: {_pending_placement}', force_console=True)
                 place_light_section_model(
                     _pending_placement.get('category', ''),
                     _pending_placement.get('model_name', ''),
@@ -1252,6 +1285,7 @@ def command_destroy(args: adsk.core.CommandEventArgs):
                     target_height_mm=float(_pending_placement.get('target_height_mm', 1000.0))
                 )
             elif kind == 'piping':
+                futil.log(f'placing piping: {_pending_placement}', force_console=True)
                 place_piping_model(
                     _pending_placement.get('category', ''),
                     _pending_placement.get('model_name', ''),

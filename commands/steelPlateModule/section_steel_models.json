@@ -104,6 +104,14 @@
       "H-300×300×10×15": {
         "path": "models/sections/H形鋼/H-300×300×10×15.f3d",
         "description": "ユーザー登録モデル"
+      },
+      "H-346×174×6×9": {
+        "path": "models/sections/H形鋼/H-346×174×6×9.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "H-100×100×6×8": {
+        "path": "models/sections/H形鋼/H-100×100×6×8.f3d",
+        "description": "ユーザー登録モデル"
       }
     }
   },
@@ -220,6 +228,10 @@
       "L-75×75×6": {
         "path": "models/sections/Lアングル/L-75×75×6.f3d",
         "description": "ユーザー登録モデル"
+      },
+      "L-90×90×6": {
+        "path": "models/sections/Lアングル/L-90×90×6.f3d",
+        "description": "ユーザー登録モデル"
       }
     }
   },
@@ -238,6 +250,10 @@
       },
       "▢-150×150×4.5": {
         "path": "models/sections/角型鋼(正方形)/▢-150×150×4.5.f3d",
+        "description": "ユーザー登録モデル"
+      },
+      "▢-100×100×6.0": {
+        "path": "models/sections/角型鋼(正方形)/▢-100×100×6.0.f3d",
         "description": "ユーザー登録モデル"
       }
     }
